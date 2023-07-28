@@ -1,6 +1,6 @@
-// index.js
 const express = require('express');
-const searchRoutes = require('./searchRoutes');
+const searchRoutes = require('./routes/searchRoutes');
+
 
 const app = express();
 const port = 5001;
