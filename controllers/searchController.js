@@ -3,6 +3,8 @@ const { search } = require('google-play-scraper');
 const searchController = async (req, res) => {
   const query = req.query.query;
 
+  res.set('Access-Control-Allow-Origin', '*');
+  
   if (!query) {
     return res.status(400).json({ error: 'Search query is missing.' });
   }
