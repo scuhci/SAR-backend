@@ -1,4 +1,8 @@
 const { search, app } = require('google-play-scraper');
+const fs = require('fs');
+const jsonToCsv = require('../utilities/jsonToCsv');
+
+let csvData;
 
 const searchController = async (req, res) => {
   const query = req.query.query;
@@ -17,17 +21,23 @@ const searchController = async (req, res) => {
     const relatedResults = [];
     for (const mainResult of mainResults) {
       const relatedQuery = `related to ${mainResult.title}`;
-      const secondaryResults = await search({ term: relatedQuery });
-      relatedResults.push(...secondaryResults);
+      relatedResults.push(await search({ term: relatedQuery }));
+      // Introduce a delay between requests (e.g., 1 second)
+      await new Promise(resolve => setTimeout(resolve, 3000));
     }
 
     // Combine the main and secondary results
-    const allResults = [...mainResults, ...relatedResults];
+    const allResults = [
+      ...mainResults.map(result => ({ ...result, source: 'primary search' })),
+      ...relatedResults.flatMap(results => results.map(result => ({ ...result, source: 'related app' })))
+    ];
 
     // Fetch additional details (including genre) for each result
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
         try {
+          // Introduce a delay between requests
+          await new Promise(resolve => setTimeout(resolve, 2000));
           const appDetails = await app({ appId: appInfo.appId });
           return {
             title: appInfo.title,
@@ -35,9 +45,12 @@ const searchController = async (req, res) => {
             url: appInfo.url,
             icon: appInfo.icon,
             developer: appInfo.developer,
+            summary: appInfo.summary,
+            score: appInfo.score,
             // adding app genre as the category and installs count to the json result
             category: appDetails.genre || 'Unknown',
             installs: appDetails.installs,
+            source: appInfo.source,
           };
         } catch (error) {
           console.error('Error fetching app details:', error);
@@ -60,6 +73,7 @@ const searchController = async (req, res) => {
         .json({ message: `Search for '${query}' did not return any results.` });
     }
 
+    csvData = uniqueResults;
     // Include totalCount and results in the response
     const totalCount = uniqueResults.length;
     res.json({ totalCount, results: uniqueResults });
@@ -71,6 +85,28 @@ const searchController = async (req, res) => {
   }
 };
 
+const downloadCSV = (req, res) => {
+  if (!csvData) {
+    return res.status(404).json({ error: 'CSV data not available.' });
+  }
+
+  try {
+    // Use the existing jsonToCsv method to convert JSON to CSV
+    const csv = jsonToCsv(csvData);
+
+    // Set response headers for CSV download
+    res.setHeader('Content-Disposition', 'attachment; filename=search_results.csv');
+    res.setHeader('Content-Type', 'text/csv');
+
+    // Send the CSV data as a response
+    res.send(csv);
+  } catch (error) {
+    console.error('Error generating CSV:', error);
+    res.status(500).send('An error occurred while generating the CSV.');
+  }
+};  
+
 module.exports = {
   search: searchController,
+  downloadCSV,
 };
