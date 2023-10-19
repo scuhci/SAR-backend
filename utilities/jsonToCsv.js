@@ -17,7 +17,6 @@ function cleanText(text) {
   
     // Create header row
     csvRows.push('title,appId,url,developer,summary,score,detailed_score,paid,category,installs,icon,source');
-    console.log(jsonData.developerId);
     // Add data rows
 
     for (const row of jsonData) {
