@@ -16,7 +16,7 @@ function cleanText(text) {
     const csvRows = [];
   
     // Create header row
-    csvRows.push('title,appId,url,developer,summary,score,detailed_score,paid,category,installs,icon,source');
+    csvRows.push('title,appId,url,developer,summary,score,detailed_score,free,category,installs,icon,source');
     // Add data rows
 
     for (const row of jsonData) {
