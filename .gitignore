@@ -3,3 +3,4 @@ build
 .nyc
 .env
 .DS_Store
+search_results.csv
