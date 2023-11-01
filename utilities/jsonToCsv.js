@@ -16,9 +16,9 @@ function cleanText(text) {
     const csvRows = [];
   
     // Create header row
-    csvRows.push('title,appId,url,developer,summary,score,category,installs,source');
-  
+    csvRows.push('title,appId,url,developer,summary,score,detailed_score,free,category,installs,icon,source');
     // Add data rows
+
     for (const row of jsonData) {
       const values = [
         `"${cleanText(row.title)}"`,
@@ -26,9 +26,12 @@ function cleanText(text) {
         `"${cleanText(row.url)}"`,
         `"${cleanText(row.developer)}"`,
         `"${cleanText(row.summary).replace(/"/g, '""')}"`, // Handle quotes in summary
+        `"${cleanText(row.scoreText)}"`,
         `${row.score || ''}`,
+        `"${cleanText(row.free.toString())}"`,
         `"${cleanText(row.category)}"`,
         `"${cleanText(row.installs)}"`,
+        `"${cleanText(row.icon)}"`,
         `"${cleanText(row.source)}"`
       ];
   

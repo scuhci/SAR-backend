@@ -1,16 +1,16 @@
-const { search, app } = require('google-play-scraper');
-const fs = require('fs');
-const jsonToCsv = require('../utilities/jsonToCsv');
+const { search, app } = require("google-play-scraper");
+const fs = require("fs");
+const jsonToCsv = require("../utilities/jsonToCsv");
 
 let csvData;
 
 const searchController = async (req, res) => {
   const query = req.query.query;
 
-  res.set('Access-Control-Allow-Origin', '*');
-  
+  res.set("Access-Control-Allow-Origin", "*");
+
   if (!query) {
-    return res.status(400).json({ error: 'Search query is missing.' });
+    return res.status(400).json({ error: "Search query is missing." });
   }
 
   try {
@@ -23,13 +23,15 @@ const searchController = async (req, res) => {
       const relatedQuery = `related to ${mainResult.title}`;
       relatedResults.push(await search({ term: relatedQuery }));
       // Introduce a delay between requests (e.g., 1 second)
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
     }
 
     // Combine the main and secondary results
     const allResults = [
-      ...mainResults.map(result => ({ ...result, source: 'primary search' })),
-      ...relatedResults.flatMap(results => results.map(result => ({ ...result, source: 'related app' })))
+      ...mainResults.map((result) => ({ ...result, source: "primary search" })),
+      ...relatedResults.flatMap((results) =>
+        results.map((result) => ({ ...result, source: "related app" }))
+      ),
     ];
 
     // Fetch additional details (including genre) for each result
@@ -37,23 +39,28 @@ const searchController = async (req, res) => {
       allResults.map(async (appInfo) => {
         try {
           // Introduce a delay between requests
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise((resolve) => setTimeout(resolve, 2000));
           const appDetails = await app({ appId: appInfo.appId });
           return {
             title: appInfo.title,
             appId: appInfo.appId,
             url: appInfo.url,
-            icon: appInfo.icon,
             developer: appInfo.developer,
+            // developerId: appInfo.developerId, // extra dev info
             summary: appInfo.summary,
             score: appInfo.score,
+            scoreText: appInfo.scoreText, // extra score info
+            // adding price info
+            free: appInfo.free,
+            // price: appInfo.priceText,
             // adding app genre as the category and installs count to the json result
-            category: appDetails.genre || 'Unknown',
+            category: appDetails.genre || "Unknown",
             installs: appDetails.installs,
+            icon: appInfo.icon, // adding icon
             source: appInfo.source,
           };
         } catch (error) {
-          console.error('Error fetching app details:', error);
+          console.error("Error fetching app details:", error);
           return null;
         }
       })
@@ -63,7 +70,9 @@ const searchController = async (req, res) => {
     const validResults = detailedResults.filter((appInfo) => appInfo !== null);
 
     // Remove duplicates based on appId
-    const uniqueResults = Array.from(new Set(validResults.map((appInfo) => appInfo.appId))).map((appId) => {
+    const uniqueResults = Array.from(
+      new Set(validResults.map((appInfo) => appInfo.appId))
+    ).map((appId) => {
       return validResults.find((appInfo) => appInfo.appId === appId);
     });
 
@@ -78,16 +87,16 @@ const searchController = async (req, res) => {
     const totalCount = uniqueResults.length;
     res.json({ totalCount, results: uniqueResults });
   } catch (error) {
-    console.error('Error occurred during search:', error);
+    console.error("Error occurred during search:", error);
     res
       .status(500)
-      .json({ error: 'An error occurred while processing your request.' });
+      .json({ error: "An error occurred while processing your request." });
   }
 };
 
 const downloadCSV = (req, res) => {
   if (!csvData) {
-    return res.status(404).json({ error: 'CSV data not available.' });
+    return res.status(404).json({ error: "CSV data not available." });
   }
 
   try {
@@ -95,16 +104,19 @@ const downloadCSV = (req, res) => {
     const csv = jsonToCsv(csvData);
 
     // Set response headers for CSV download
-    res.setHeader('Content-Disposition', 'attachment; filename=search_results.csv');
-    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=search_results.csv"
+    );
+    res.setHeader("Content-Type", "text/csv");
 
     // Send the CSV data as a response
     res.send(csv);
   } catch (error) {
-    console.error('Error generating CSV:', error);
-    res.status(500).send('An error occurred while generating the CSV.');
+    console.error("Error generating CSV:", error);
+    res.status(500).send("An error occurred while generating the CSV.");
   }
-};  
+};
 
 module.exports = {
   search: searchController,
