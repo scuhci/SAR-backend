@@ -1,45 +1,43 @@
 function cleanText(text) {
-    // Remove HTML tags and decode HTML entities
-    let cleanedText = text
-      .replace(/<\/?[^>]+(>|$)/g, '')
-      .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, '&')
-      .replace(/&apos;/g, "'")
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&#39;/g, "'");
-  
-    return cleanedText;
+  if (typeof text !== 'string') {
+    return text; // Return an empty string if text is not a string
   }
-  
-  function jsonToCsv(jsonData) {
-    const csvRows = [];
-  
-    // Create header row
-    csvRows.push('title,appId,url,developer,summary,score,detailed_score,free,category,installs,icon,source');
-    // Add data rows
 
-    for (const row of jsonData) {
-      const values = [
-        `"${cleanText(row.title)}"`,
-        `"${cleanText(row.appId)}"`,
-        `"${cleanText(row.url)}"`,
-        `"${cleanText(row.developer)}"`,
-        `"${cleanText(row.summary).replace(/"/g, '""')}"`, // Handle quotes in summary
-        `"${cleanText(row.scoreText)}"`,
-        `${row.score || ''}`,
-        `"${cleanText(row.free.toString())}"`,
-        `"${cleanText(row.category)}"`,
-        `"${cleanText(row.installs)}"`,
-        `"${cleanText(row.icon)}"`,
-        `"${cleanText(row.source)}"`
-      ];
-  
-      csvRows.push(values.join(','));
-    }
-  
-    return csvRows.join('\n');
+  // Remove HTML tags and decode HTML entities
+  let cleanedText = text
+    .replace(/<\/?[^>]+(>|$)/g, '')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'");
+
+  return cleanedText;
+}
+
+// Inside jsonToCsv function
+function jsonToCsv(jsonData) {
+  const csvRows = [];
+
+  // Extract column headers dynamically from the first object in jsonData
+  let columns = Object.keys(jsonData[0] || {});
+
+  // Exclude specific columns
+  const columnsToExclude = ['source', 'installs'];
+  columns = columns.filter(column => !columnsToExclude.includes(column));
+
+  // Create header row
+  csvRows.push(columns.map(column => `"${cleanText(column)}"`).join(','));
+
+  // Add data rows
+  for (const row of jsonData) {
+    // Exclude values for specific columns
+    const values = columns.map(column => `"${cleanText(row[column])}"`);
+    csvRows.push(values.join(','));
   }
-  
-  module.exports = jsonToCsv;
-  
+
+  return csvRows.join('\n');
+}
+
+module.exports = jsonToCsv;
