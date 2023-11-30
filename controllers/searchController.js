@@ -1,16 +1,10 @@
 const { search, app } = require("google-play-scraper");
 const fs = require("fs");
 
-// In another file (e.g., searchController.js)
 const { cleanText, jsonToCsv } = require('../utilities/jsonToCsv');
 
-
-// const jsonToCsv = require("../utilities/jsonToCsv");
-
-// // Access the cleanText function from the jsonToCsv module
-// const cleanText = jsonToCsv.cleanText;
-
 let csvData;
+let globalQuery; // A global variable to store the query
 
 const searchController = async (req, res) => {
   const query = req.query.query;
@@ -20,6 +14,8 @@ const searchController = async (req, res) => {
   if (!query) {
     return res.status(400).json({ error: "Search query is missing." });
   }
+
+  globalQuery = query
 
   try {
     // Search for the main query
@@ -49,21 +45,8 @@ const searchController = async (req, res) => {
           // Introduce a delay between requests
           await new Promise((resolve) => setTimeout(resolve, 2000));
           const appDetails = await app({ appId: appInfo.appId });
-          return {
-            title: appInfo.title,
-            appId: appInfo.appId,
-            url: appInfo.url,
-            developer: appInfo.developer,
-            summary: appInfo.summary,
-            score: appInfo.score,
-            scoreText: appInfo.scoreText, // extra score info
-            // adding price info
-            free: appInfo.free,
-            // price: appInfo.priceText,
-            // adding app genre as the category and installs count to the json result
-            category: appDetails.genre || "Unknown",
-            installs: appDetails.installs,
-            source: appInfo.source,
+          return { ...appInfo,
+            ...appDetails,
           };
         } catch (error) {
           console.error("Error fetching app details:", error);
@@ -118,8 +101,10 @@ const searchController = async (req, res) => {
       .json({ error: "An error occurred while processing your request." });
   }
 };
-
+  
 const downloadCSV = (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+
   if (!csvData) {
     return res.status(404).json({ error: "CSV data not available." });
   }
@@ -128,10 +113,27 @@ const downloadCSV = (req, res) => {
     // Use the existing jsonToCsv method to convert JSON to CSV
     const csv = jsonToCsv(csvData);
 
+    // Get the current timestamp in the desired format
+    const timestamp = new Date().toLocaleString('en-US', {
+      month: 'numeric',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: true,
+    });
+
+    // Extract date and time components and remove spaces
+    const dateComponents = timestamp.split('/').map(component => component.trim());
+    const timeComponents = dateComponents[2].split(',').map(component => component.trim());
+
+    // Format the timestamp without spaces
+    const formattedTimestamp = `${globalQuery}_${dateComponents[0]}${dateComponents[1]}${timeComponents[0]}`; //${timeComponents[1]}
+
     // Set response headers for CSV download
     res.setHeader(
       "Content-Disposition",
-      "attachment; filename=${query}_${timestamp}.csv"
+      `attachment; filename=${formattedTimestamp}.csv`
     );
     res.setHeader("Content-Type", "text/csv");
 
