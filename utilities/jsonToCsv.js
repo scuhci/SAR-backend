@@ -5,7 +5,7 @@ function cleanText(text) {
 
   // Remove HTML tags and decode HTML entities
   let cleanedText = text
-    .replace(/<\/?[^>]+(>|$)/g, '')
+    .replace(/<\/?[^>]+(>|$)<\/b><br><\/br>/g, '')
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, '&')
     .replace(/&apos;/g, "'")
@@ -24,8 +24,8 @@ function jsonToCsv(jsonData) {
   let columns = Object.keys(jsonData[0] || {});
 
   // Exclude specific columns
-  const columnsToExclude = ['source', 'installs'];
-  columns = columns.filter(column => !columnsToExclude.includes(column));
+  // const columnsToExclude = ['source', 'installs'];
+  // columns = columns.filter(column => !columnsToExclude.includes(column));
 
   // Create header row
   csvRows.push(columns.map(column => `"${cleanText(column)}"`).join(','));
@@ -40,4 +40,7 @@ function jsonToCsv(jsonData) {
   return csvRows.join('\n');
 }
 
-module.exports = jsonToCsv;
+module.exports = {
+  cleanText, 
+  jsonToCsv,
+};

@@ -1,6 +1,14 @@
 const { search, app } = require("google-play-scraper");
 const fs = require("fs");
-const jsonToCsv = require("../utilities/jsonToCsv");
+
+// In another file (e.g., searchController.js)
+const { cleanText, jsonToCsv } = require('../utilities/jsonToCsv');
+
+
+// const jsonToCsv = require("../utilities/jsonToCsv");
+
+// // Access the cleanText function from the jsonToCsv module
+// const cleanText = jsonToCsv.cleanText;
 
 let csvData;
 
@@ -46,7 +54,6 @@ const searchController = async (req, res) => {
             appId: appInfo.appId,
             url: appInfo.url,
             developer: appInfo.developer,
-            // developerId: appInfo.developerId, // extra dev info
             summary: appInfo.summary,
             score: appInfo.score,
             scoreText: appInfo.scoreText, // extra score info
@@ -56,7 +63,6 @@ const searchController = async (req, res) => {
             // adding app genre as the category and installs count to the json result
             category: appDetails.genre || "Unknown",
             installs: appDetails.installs,
-            icon: appInfo.icon, // adding icon
             source: appInfo.source,
           };
         } catch (error) {
@@ -83,9 +89,28 @@ const searchController = async (req, res) => {
     }
 
     csvData = uniqueResults;
-    // Include totalCount and results in the response
+
+    // Limit the unique results to the first 5 for the response
+    const limitedUniqueResults = uniqueResults.slice(0, 5);
+
+    if (limitedUniqueResults.length === 0) {
+      return res
+        .status(404)
+        .json({ message: `Search for '${query}' did not return any results.` });
+    }
+
+    // Apply cleanText to the summary property of each result
+    const cleanedLimitedResults = limitedUniqueResults.map((result) => {
+      if (result.summary) {
+        result.summary = cleanText(result.summary);
+      }
+      return result;
+    });
+
+    // Include totalCount and cleaned results in the response
     const totalCount = uniqueResults.length;
-    res.json({ totalCount, results: uniqueResults });
+
+    res.json({ totalCount, results: cleanedLimitedResults });
   } catch (error) {
     console.error("Error occurred during search:", error);
     res
@@ -106,7 +131,7 @@ const downloadCSV = (req, res) => {
     // Set response headers for CSV download
     res.setHeader(
       "Content-Disposition",
-      "attachment; filename=search_results.csv"
+      "attachment; filename=${query}_${timestamp}.csv"
     );
     res.setHeader("Content-Type", "text/csv");
 
