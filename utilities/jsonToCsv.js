@@ -39,7 +39,8 @@ function jsonToCsv(jsonData) {
     'reviews',
     'minInstalls',
     'priceText',
-    'description'
+    'description',
+    'categories'
   ];
 
   // Extract column headers dynamically from the first object in jsonData
