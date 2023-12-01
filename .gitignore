@@ -4,3 +4,4 @@ build
 .env
 .DS_Store
 search_results.csv
+package-lock.json
