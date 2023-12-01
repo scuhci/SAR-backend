@@ -40,7 +40,10 @@ function jsonToCsv(jsonData) {
     'minInstalls',
     'priceText',
     'description',
-    'categories'
+    'categories',
+    'preregister',
+    'earlyAccessEnabled',
+    'isAvailableInPlayPass'
   ];
 
   // Extract column headers dynamically from the first object in jsonData
