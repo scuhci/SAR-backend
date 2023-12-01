@@ -1,5 +1,6 @@
 const { search, app } = require("google-play-scraper");
 const fs = require("fs");
+const cors = require('cors'); // Import the cors middleware
 
 const { cleanText, jsonToCsv } = require('../utilities/jsonToCsv');
 
@@ -15,7 +16,7 @@ const searchController = async (req, res) => {
     return res.status(400).json({ error: "Search query is missing." });
   }
 
-  globalQuery = query
+  globalQuery = query;
 
   try {
     // Search for the main query
@@ -45,9 +46,7 @@ const searchController = async (req, res) => {
           // Introduce a delay between requests
           await new Promise((resolve) => setTimeout(resolve, 2000));
           const appDetails = await app({ appId: appInfo.appId });
-          return { ...appInfo,
-            ...appDetails,
-          };
+          return { ...appInfo, ...appDetails };
         } catch (error) {
           console.error("Error fetching app details:", error);
           return null;
@@ -101,48 +100,54 @@ const searchController = async (req, res) => {
       .json({ error: "An error occurred while processing your request." });
   }
 };
-  
+
 const downloadCSV = (req, res) => {
-  res.set("Access-Control-Allow-Origin", "*");
+  // Use cors middleware for downloadCSV route
+  cors()(req, res, () => {
+    if (!csvData) {
+      return res.status(404).json({ error: "CSV data not available." });
+    }
 
-  if (!csvData) {
-    return res.status(404).json({ error: "CSV data not available." });
-  }
+    try {
+      // Use the existing jsonToCsv method to convert JSON to CSV
+      const csv = jsonToCsv(csvData);
 
-  try {
-    // Use the existing jsonToCsv method to convert JSON to CSV
-    const csv = jsonToCsv(csvData);
+      // Get the current timestamp in the desired format
+      const timestamp = new Date().toLocaleString('en-US', {
+        month: 'numeric',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: true,
+      });
 
-    // Get the current timestamp in the desired format
-    const timestamp = new Date().toLocaleString('en-US', {
-      month: 'numeric',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: true,
-    });
+      // Extract date and time components and remove spaces
+      const dateComponents = timestamp.split('/').map(component => component.trim());
+      const timeComponents = dateComponents[2].split(',').map(component => component.trim());
 
-    // Extract date and time components and remove spaces
-    const dateComponents = timestamp.split('/').map(component => component.trim());
-    const timeComponents = dateComponents[2].split(',').map(component => component.trim());
+      // Format the timestamp without spaces
+      const formattedTimestamp = `${dateComponents[0]}${dateComponents[1]}${timeComponents[0]}`;
 
-    // Format the timestamp without spaces
-    const formattedTimestamp = `${globalQuery}_${dateComponents[0]}${dateComponents[1]}${timeComponents[0]}`; //${timeComponents[1]}
+      // Suggest a filename to the browser
+      const suggestedFilename = `${globalQuery}_${formattedTimestamp}.csv`;
 
-    // Set response headers for CSV download
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=${formattedTimestamp}.csv`
-    );
-    res.setHeader("Content-Type", "text/csv");
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+      
+      // Set response headers for CSV download
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${suggestedFilename}"`
+      );
+      res.setHeader("Content-Type", "text/csv");
 
-    // Send the CSV data as a response
-    res.send(csv);
-  } catch (error) {
-    console.error("Error generating CSV:", error);
-    res.status(500).send("An error occurred while generating the CSV.");
-  }
+      // Send the CSV data as a response
+      res.status(200).send(csv);
+    } catch (error) {
+      console.error("Error generating CSV:", error);
+      res.status(500).send("An error occurred while generating the CSV.");
+    }
+  });
 };
 
 module.exports = {
