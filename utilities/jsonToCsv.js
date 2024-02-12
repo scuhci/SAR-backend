@@ -21,7 +21,6 @@ function jsonToCsv(jsonData) {
 
   // Define columns to exclude
   const columnsToExclude = [
-    'icon',
     'comments',
     'descriptionHTML',
     'updated',
@@ -32,7 +31,6 @@ function jsonToCsv(jsonData) {
     'headerImage',
     'familyGenreID',
     'familyGenre',
-    'genreID',
     'developerInternalID',
     'androidVersionText',
     'histogram',
