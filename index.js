@@ -3,9 +3,9 @@ const searchRoutes = require('./routes/searchRoutes');
 const permissionsRoute = require('./routes/permissionsRoute');
 const { downloadCSV } = require('./controllers/searchController');
 const path = require('path')
-
 const app = express();
 const port = 5001;
+const logger = require('log-timestamp') // adding timestamps to logs
 
 app.use('/search', searchRoutes);
 
