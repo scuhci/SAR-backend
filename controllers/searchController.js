@@ -1,9 +1,30 @@
+const natural = require('natural');
+const tokenizer = new natural.WordTokenizer();
 const { search, app } = require("google-play-scraper");
 const fs = require("fs");
-const cors = require('cors'); // Import the cors middleware
+
+// Import the cors middleware
+const cors = require('cors'); 
+
 const { cleanText, jsonToCsv } = require('../utilities/jsonToCsv');
 const path = require('path');
 const file_name = path.basename(__filename);
+
+// Function to calculate similarity
+function calculateJaccardSimilarity(set1, set2) {
+  const intersection = new Set([...set1].filter(x => set2.has(x)));
+  const union = new Set([...set1, ...set2]);
+  const similarity = intersection.size / union.size;
+  return similarity;
+}
+
+// Function to calculate similarity score for search results
+function calculateSimilarityScore(query, result) {
+  const queryTokens = new Set(tokenizer.tokenize(query.toLowerCase()));
+  const resultTokens = new Set(tokenizer.tokenize(result.toLowerCase()));
+  const similarity = calculateJaccardSimilarity(queryTokens, resultTokens);
+  return similarity;
+}
 
 let csvData;
 let globalQuery; // A global variable to store the query
@@ -109,6 +130,10 @@ const searchController = async (req, res) => {
       if (result.summary) {
         result.summary = cleanText(result.summary);
       }
+
+      // Calculate similarity score and add it to the result object
+      result.similarityScore = calculateSimilarityScore(globalQuery, result.title + ' ' + result.description);
+
       return result;
     });
 
