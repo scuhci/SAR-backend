@@ -1,6 +1,8 @@
 const natural = require('natural');
 const { search, app } = require("google-play-scraper");
 const { cleanText, jsonToCsv } = require('../utilities/jsonToCsv');
+const path = require('path');
+const file_name = path.basename(__filename);
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -22,9 +24,14 @@ function calculateSimilarityScore(query, result) {
 let csvData;
 let globalQuery;
 
-const searchController = async (query) => {
+const searchController = async (req, res) => {
+  const query = req.query.query;
+  console.log('[%s] Query Passed: %s\n', file_name, query);
+  res.set("Access-Control-Allow-Origin", "*");
+
   if (!query) {
-    throw new Error("Search query is missing.");
+    console.error('Missing search query');
+    return res.status(400).json({ error: "Search query is missing." });
   }
 
   globalQuery = query;
@@ -36,6 +43,7 @@ const searchController = async (query) => {
     // Perform a secondary search for each primary result
     const relatedResults = [];
     for (const mainResult of mainResults) {
+      console.log('[%s] Main Title Fetched: %s\n', file_name, mainResult.title);
       const relatedQuery = `related to ${mainResult.title}`;
       relatedResults.push(await search({ term: relatedQuery }));
       // Introduce a delay between requests (e.g., 1 second)
@@ -49,7 +57,11 @@ const searchController = async (query) => {
         results.map((result) => ({ ...result, source: "related app" }))
       ),
     ];
-
+    console.log('[%s] [%d] allResults:\n-------------------------\n', file_name, allResults.length);
+    for (const result of allResults)
+    {
+      console.log('[%s] %s\n', file_name, result.title);
+    }
     // Fetch additional details (including genre) for each result
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
@@ -64,10 +76,13 @@ const searchController = async (query) => {
         }
       })
     );
-
     // Filter out apps with missing details
     const validResults = detailedResults.filter((appInfo) => appInfo !== null);
-
+    console.log('[%s] [%d] validResults:\n-------------------------\n', file_name, validResults.length);
+    for (const result of validResults)
+    {
+      console.log('[%s] %s\n', file_name, result.title);
+    }
     // Remove duplicates based on appId
     const uniqueResults = Array.from(
       new Set(validResults.map((appInfo) => appInfo.appId))
@@ -80,9 +95,20 @@ const searchController = async (query) => {
     }
 
     csvData = uniqueResults;
+    console.log('[%s] [%d] entries to be forwarded to CSV:\n-------------------------\n', file_name, csvData.length);
+    for (const result of csvData)
+    {
+      console.log('[%s] %s\n', file_name, result.title);
+    }
+    
 
     // Limit the unique results to the first 5 for the response
     const limitedUniqueResults = uniqueResults.slice(0, 5);
+    console.log('[%s] [%d] results shown on SMAR Website:\n-------------------------\n', file_name, limitedUniqueResults.length);
+    for (const result of limitedUniqueResults)
+    {
+      console.log('[%s] Title: %s\n', file_name, result.title);
+    }
 
     if (limitedUniqueResults.length === 0) {
       throw new Error(`Search for '${query}' did not return any results.`);
@@ -117,7 +143,6 @@ const downloadCSV = (req, res) => {
     try {
       // Use the existing jsonToCsv method to convert JSON to CSV
       const csv = jsonToCsv(csvData);
-
       // Get the current timestamp in the desired format
       const timestamp = new Date().toLocaleString('en-US', {
         month: 'numeric',
