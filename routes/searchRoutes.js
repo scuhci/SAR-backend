@@ -4,7 +4,7 @@ const searchController = require('../controllers/searchController');
 const permissionsController = require('../controllers/permissionsController')
 
 // Search endpoint
-router.get('/', searchController.search);
+router.get('/search', searchController.search);
 
 // Endpoint to download CSV
 router.get('/download-csv', searchController.downloadCSV);

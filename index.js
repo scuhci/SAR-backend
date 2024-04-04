@@ -9,9 +9,9 @@ const port = 5001;
 
 app.use('/search', searchRoutes);
 
-// Endpoint for CSV download
-app.get('/download-csv', downloadCSV);
 app.use('/permissions', permissionsRoute);
+
+app.get('/download-csv', downloadCSV);
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);

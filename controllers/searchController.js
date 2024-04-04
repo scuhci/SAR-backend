@@ -1,14 +1,8 @@
 const natural = require('natural');
-const tokenizer = new natural.WordTokenizer();
 const { search, app } = require("google-play-scraper");
-const fs = require("fs");
-
-// Import the cors middleware
-const cors = require('cors'); 
-
 const { cleanText, jsonToCsv } = require('../utilities/jsonToCsv');
 
-// Function to calculate similarity
+// Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
   const intersection = new Set([...set1].filter(x => set2.has(x)));
   const union = new Set([...set1, ...set2]);
@@ -16,8 +10,9 @@ function calculateJaccardSimilarity(set1, set2) {
   return similarity;
 }
 
-// Function to calculate similarity score for search results
+// Calculate similarity score for search results
 function calculateSimilarityScore(query, result) {
+  const tokenizer = new natural.WordTokenizer();
   const queryTokens = new Set(tokenizer.tokenize(query.toLowerCase()));
   const resultTokens = new Set(tokenizer.tokenize(result.toLowerCase()));
   const similarity = calculateJaccardSimilarity(queryTokens, resultTokens);
@@ -25,15 +20,11 @@ function calculateSimilarityScore(query, result) {
 }
 
 let csvData;
-let globalQuery; // A global variable to store the query
+let globalQuery;
 
-const searchController = async (req, res) => {
-  const query = req.query.query;
-
-  res.set("Access-Control-Allow-Origin", "*");
-
+const searchController = async (query) => {
   if (!query) {
-    return res.status(400).json({ error: "Search query is missing." });
+    throw new Error("Search query is missing.");
   }
 
   globalQuery = query;
@@ -85,9 +76,7 @@ const searchController = async (req, res) => {
     });
 
     if (uniqueResults.length === 0) {
-      return res
-        .status(404)
-        .json({ message: `Search for '${query}' did not return any results.` });
+      throw new Error(`Search for '${query}' did not return any results.`);
     }
 
     csvData = uniqueResults;
@@ -96,9 +85,7 @@ const searchController = async (req, res) => {
     const limitedUniqueResults = uniqueResults.slice(0, 5);
 
     if (limitedUniqueResults.length === 0) {
-      return res
-        .status(404)
-        .json({ message: `Search for '${query}' did not return any results.` });
+      throw new Error(`Search for '${query}' did not return any results.`);
     }
 
     // Apply cleanText to the summary property of each result
@@ -113,15 +100,10 @@ const searchController = async (req, res) => {
       return result;
     });
 
-    // Include totalCount and cleaned results in the response
-    const totalCount = uniqueResults.length;
-
-    res.json({ totalCount, results: cleanedLimitedResults });
+    return { totalCount: uniqueResults.length, results: cleanedLimitedResults };
   } catch (error) {
     console.error("Error occurred during search:", error);
-    res
-      .status(500)
-      .json({ error: "An error occurred while processing your request." });
+    throw new Error("An error occurred while processing your request.");
   }
 };
 
