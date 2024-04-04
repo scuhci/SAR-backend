@@ -7,7 +7,9 @@ const searchController = require('./searchController');
 
 const fetchPermissions = async (req, res) => {
   const query = req.query.query;
-  const includePermissions = req.'[%s] Query Passed: %s', file_name, query.includePermissions === 'true';
+  const includePermissions = req.query.includePermissions === 'true';
+  
+  console.log('[%s] Query Passed: %s', file_name, query);
 
   res.set('Access-Control-Allow-Origin', '*');
 
