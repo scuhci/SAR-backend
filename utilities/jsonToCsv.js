@@ -1,6 +1,6 @@
 function cleanText(text) {
   if (typeof text !== 'string') {
-    return text; // Return an empty string if text is not a string
+    return text;
   }
 
   // Remove HTML tags and decode HTML entities
@@ -16,8 +16,10 @@ function cleanText(text) {
   return cleanedText;
 }
 
-function jsonToCsv(jsonData) {
+function jsonToCsv(jsonData, standardPermissionsList) {
   const csvRows = [];
+
+  console.log(jsonData);
 
   // Define columns to exclude
   const columnsToExclude = [
@@ -41,7 +43,8 @@ function jsonToCsv(jsonData) {
     'categories',
     'preregister',
     'earlyAccessEnabled',
-    'isAvailableInPlayPass'
+    'isAvailableInPlayPass',
+    'permissions',
   ];
 
   // Extract column headers dynamically from the first object in jsonData
@@ -50,14 +53,26 @@ function jsonToCsv(jsonData) {
   // Remove excluded columns
   columns = columns.filter(column => !columnsToExclude.includes(column));
 
+  // Add standard permissions columns
+  columns = [...columns, ...standardPermissionsList];
+
   // Create header row
   csvRows.push(columns.map(column => `"${cleanText(column)}"`).join(','));
 
-  // Add data rows
+   // Add data rows
   for (const row of jsonData) {
-    // Exclude values for specific columns
-    const values = columns.map(column => `"${cleanText(row[column])}"`);
-    csvRows.push(values.join(','));
+    const rowValues = [];
+    for (const column of columns) {
+      if (column in row) {
+        rowValues.push(`"${cleanText(row[column])}"`);
+      } else if (standardPermissionsList.includes(column)) {
+        const permission = row.permissions.find(p => p.permission === column);
+        rowValues.push(permission ? true : false);
+      } else {
+        rowValues.push('');
+      }
+    }
+    csvRows.push(rowValues.join(','));
   }
 
   return csvRows.join('\n');

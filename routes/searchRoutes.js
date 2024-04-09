@@ -5,7 +5,7 @@ const searchController = require('../controllers/searchController');
 const permissionsController = require('../controllers/permissionsController')
 router.use(morgan('combined'));
 // Search endpoint
-router.get('/search', searchController.search);
+router.get('/', searchController.search);
 
 // Endpoint to download CSV
 router.get('/download-csv', searchController.downloadCSV);

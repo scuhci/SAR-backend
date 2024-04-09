@@ -1,38 +1,30 @@
-const standardPermissions = require('./permissionsConfig');
-const { permissions: fetchPermissionsFromGooglePlay, search } = require('google-play-scraper');
-const path = require('path');
-const file_name = path.basename(__filename);
+const { permissions: fetchPermissionsFromGooglePlay } = require('google-play-scraper');
 
-const searchController = require('./searchController');
+const fetchPermissions = async (results) => {
+  try {
+    const permissionsResults = await Promise.all(results.map(async (appInfo) => {
+      try {
+        const appPermissions = await fetchPermissionsFromGooglePlay({ appId: appInfo.appId, lang: 'en', country: 'us' });
 
-const fetchPermissions = async (req, res) => {
-  const query = req.query.query;
-  const includePermissions = req.query.includePermissions === 'true';
-  
-  console.log('[%s] Query Passed: %s', file_name, query);
+        // Map permission items to the desired structure
+        const permissions = appPermissions.map(permission => ({
+          permission: permission.permission,
+          type: permission.type,
+        }));
 
-  res.set('Access-Control-Allow-Origin', '*');
+        // Append permission details to the appInfo
+        return { ...appInfo, permissions: permissions };
+      } catch (error) {
+        console.error(`Error fetching permissions for app (${appInfo.appId}):`, error);
+        return { ...appInfo, permissions: [] };
+      }
+    }));
 
-    if (!query) {
-        return res.status(400).json({ error: 'Search query is missing.' });
-    }
-    
-    try {
-        // Search for the main query
-        console.log('[%s] Permissions query: %s', file_name, query)
-        const results = await permissions({ appId: query, lang: 'en', country: 'us' }).then(console.log);;
-
-        if (!results || !Array.isArray(results) || results.length === 0 ) {
-            return res.status(404).json({ message: `Search for '${query}' did not return any results.` });
-        }
-
-        res.json(results);
-    } catch (error) {
-        console.error('Error occurred during search:', error);
-        res
-          .status(500)
-          .json({ error: 'An error occurred while processing your request.' });
-    }
+    return permissionsResults;
+  } catch (error) {
+    console.error('Error occurred during permissions fetch:', error);
+    throw new Error('An error occurred while fetching permissions.');
+  }
 };
 
 module.exports = {

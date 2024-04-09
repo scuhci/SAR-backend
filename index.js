@@ -14,9 +14,9 @@ const _dirname=path.dirname("")
 const buildpath = path.join(_dirname,"../sar-frontend/build")
 app.use(express.static(buildpath));
 
-app.use('/permissions', permissionsRoute);
-
+// Endpoint for CSV download
 app.get('/download-csv', downloadCSV);
+app.use('/permissions', permissionsRoute);
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
