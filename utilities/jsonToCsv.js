@@ -44,7 +44,8 @@ function jsonToCsv(jsonData, standardPermissionsList) {
     'preregister',
     'earlyAccessEnabled',
     'isAvailableInPlayPass',
-    'permissions',
+    'permissions', //This is just the permissions data structure, which has a child object that contains individual permissions and their labels 
+    //individual permissions and labels are added separately
   ];
 
   // Extract column headers dynamically from the first object in jsonData
