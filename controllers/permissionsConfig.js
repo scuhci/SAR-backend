@@ -7,7 +7,6 @@ const standardPermissionsList = [
   'read your own contact card',
   'read calendar events plus confidential information',
   'add or modify calendar events and send email to guests without owners\' knowledge',
-  'find accounts on the device',
   'read your contacts',
   'modify your contacts',
   'directly call phone numbers',
