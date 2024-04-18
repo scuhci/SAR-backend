@@ -5,21 +5,30 @@ function cleanText(text) {
 
   // Remove HTML tags and decode HTML entities
   let cleanedText = text
-    .replace(/<\/?[^>]+(>|$)<\/b><br><\/br><br>/g, '')
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&')
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&#39;/g, "'");
+  .replace(/<[^>]+>/g, '') // Remove HTML tags
+  .replace(/&quot;/g, '"')
+  .replace(/&amp;/g, '&')
+  .replace(/&apos;/g, "'")
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/&#39;/g, "'");
+
+  // Escape double quotes within the text
+  cleanedText = cleanedText.replace(/"/g, '""');
+
+  // Replace HTML line breaks with spaces
+  cleanedText = cleanedText.replace(/<br\s*\/?>/g, ' ');
+
+  // Replace other line breaks with spaces
+  cleanedText = cleanedText.replace(/\r?\n|\r/g, ' ');
 
   return cleanedText;
 }
 
-function jsonToCsv(jsonData, standardPermissionsList) {
+function jsonToCsv(jsonData, standardPermissionsList, includePermissions = false) {
   const csvRows = [];
 
-  console.log(jsonData);
+  // console.log(jsonData);
 
   // Define columns to exclude
   const columnsToExclude = [
@@ -44,7 +53,7 @@ function jsonToCsv(jsonData, standardPermissionsList) {
     'preregister',
     'earlyAccessEnabled',
     'isAvailableInPlayPass',
-    'permissions', //This is just the permissions data structure, which has a child object that contains individual permissions and their labels 
+    'permissions', //This is the permissions data structure, which has a child object that contains individual permissions and their labels 
     //individual permissions and labels are added separately
   ];
 
@@ -54,13 +63,15 @@ function jsonToCsv(jsonData, standardPermissionsList) {
   // Remove excluded columns
   columns = columns.filter(column => !columnsToExclude.includes(column));
 
-  // Add standard permissions columns
-  columns = [...columns, ...standardPermissionsList];
+  // Add standard permissions columns if includePermissions is true
+  if (includePermissions) {
+    columns = [...columns, ...standardPermissionsList];
+  }
 
   // Create header row
   csvRows.push(columns.map(column => `"${cleanText(column)}"`).join(','));
 
-   // Add data rows
+  //Add data rows
   for (const row of jsonData) {
     const rowValues = [];
     for (const column of columns) {

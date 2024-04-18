@@ -10,6 +10,7 @@ const standardPermissionsList = require('./permissionsConfig');
 
 let csvData;
 let globalQuery;
+let includePermissions;
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -28,9 +29,15 @@ function calculateSimilarityScore(query, result) {
   return similarity;
 }
 
+// Function to calculate similarity score and add it to the result object
+function calculateResultSimilarityScore(result) {
+  result.similarityScore = calculateSimilarityScore(globalQuery, result.title + ' ' + result.description);
+  return result;
+}
+
 const searchController = async (req, res) => {
   const query = req.query.query;
-  const includePermissions = req.query.includePermissions === 'true';
+  includePermissions = req.query.includePermissions === 'true';
   console.log('[%s] Query Passed: %s\n', file_name, query);
 
   res.set("Access-Control-Allow-Origin", "*");
@@ -105,27 +112,32 @@ const searchController = async (req, res) => {
       throw new Error(`Search for '${query}' did not return any results.`);
     }
     
-    // Limit the unique results to the first 5 for the response
-    const limitedUniqueResults = uniqueResults.slice(0, 5);
+    // Calculate similarity score for all unique results
+    const resultsWithSimilarityScore = uniqueResults.map(calculateResultSimilarityScore);
 
-    console.log('[%s] [%d] results shown on SMAR Website:\n-------------------------\n', file_name, limitedUniqueResults.length);
-    for (const result of limitedUniqueResults)
-    {
-      console.log('[%s] Title: %s\n', file_name, result.title);
+    // Limit the results with similarity score to the first 5 for the response
+    const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(0, 5);
+
+    console.log('[%s] [%d] results shown on SMAR Website:\n-------------------------\n', file_name, limitedResultsWithSimilarityScore.length);
+    for (const result of limitedResultsWithSimilarityScore) {
+      console.log('[%s] Title: %s, Similarity Score: %d\n', file_name, result.title, result.similarityScore);
     }
 
-    if (limitedUniqueResults.length === 0) {
+    if (limitedResultsWithSimilarityScore.length === 0) {
       throw new Error(`Search for '${query}' did not return any results.`);
     }
 
-    // Apply cleanText to the summary property of each result
-    const cleanedLimitedResults = limitedUniqueResults.map((result) => {
+    // Apply cleanText to the summary and recentChanges properties of each result
+    const cleanedLimitedResults = limitedResultsWithSimilarityScore.map((result) => {
+      // Clean the summary column
       if (result.summary) {
         result.summary = cleanText(result.summary);
       }
 
-      // Calculate similarity score and add it to the result object
-      result.similarityScore = calculateSimilarityScore(globalQuery, result.title + ' ' + result.description);
+      // Clean the recentChanges column
+      if (result.recentChanges) {
+        result.recentChanges = cleanText(result.recentChanges);
+      }
 
       return result;
     });
@@ -180,7 +192,7 @@ const downloadCSV = (req, res) => {
 
     try {
       // Use the existing jsonToCsv method to convert JSON to CSV
-      const csv = jsonToCsv(csvData, standardPermissionsList);
+      const csv = jsonToCsv(csvData, standardPermissionsList, includePermissions);
       // Get the current timestamp in the desired format
       const timestamp = new Date().toLocaleString('en-US', {
         month: 'numeric',
