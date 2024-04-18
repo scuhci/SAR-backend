@@ -53,6 +53,7 @@ function jsonToCsv(jsonData, standardPermissionsList, includePermissions = false
     'preregister',
     'earlyAccessEnabled',
     'isAvailableInPlayPass',
+    'similarityScore',
     'permissions', //This is the permissions data structure, which has a child object that contains individual permissions and their labels 
     //individual permissions and labels are added separately
   ];

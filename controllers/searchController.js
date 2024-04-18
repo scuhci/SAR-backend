@@ -1,12 +1,12 @@
 const natural = require('natural');
 const { search, app } = require("google-play-scraper");
 const { cleanText, jsonToCsv } = require('../utilities/jsonToCsv');
+const permissionsController = require('./permissionsController');
+const standardPermissionsList = require('./permissionsConfig');
+
 const path = require('path');
 const file_name = path.basename(__filename);
-const permissionsController = require('./permissionsController');
 const cors = require('cors'); 
-const standardPermissionsList = require('./permissionsConfig');
-// const { downloadCSV } = require('./downloadCSVController');
 
 let csvData;
 let globalQuery;
@@ -29,7 +29,7 @@ function calculateSimilarityScore(query, result) {
   return similarity;
 }
 
-// Function to calculate similarity score and add it to the result object
+// Calculate similarity score and add it to the result object
 function calculateResultSimilarityScore(result) {
   result.similarityScore = calculateSimilarityScore(globalQuery, result.title + ' ' + result.description);
   return result;
@@ -53,12 +53,13 @@ const searchController = async (req, res) => {
     // Search for the main query
     const mainResults = await search({ term: query });
 
-    // Perform a secondary search for each primary result
+    // Secondary search for each primary result
     const relatedResults = [];
     for (const mainResult of mainResults) {
       console.log('[%s] Main Title Fetched: %s\n', file_name, mainResult.title);
       const relatedQuery = `related to ${mainResult.title}`;
       relatedResults.push(await search({ term: relatedQuery }));
+
       // Introduce a delay between requests (e.g., 1 second)
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
@@ -81,7 +82,6 @@ const searchController = async (req, res) => {
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
         try {
-          // Introduce a delay between requests
           await new Promise((resolve) => setTimeout(resolve, 2000));
           const appDetails = await app({ appId: appInfo.appId });
           return { ...appInfo, ...appDetails };
@@ -115,7 +115,11 @@ const searchController = async (req, res) => {
     // Calculate similarity score for all unique results
     const resultsWithSimilarityScore = uniqueResults.map(calculateResultSimilarityScore);
 
-    // Limit the results with similarity score to the first 5 for the response
+    // Sort the results by similarity score in descending order
+    resultsWithSimilarityScore.sort((a, b) => b.similarityScore - a.similarityScore);
+
+
+    // Slice the results with similarity score to the first 5 for the response
     const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(0, 5);
 
     console.log('[%s] [%d] results shown on SMAR Website:\n-------------------------\n', file_name, limitedResultsWithSimilarityScore.length);
