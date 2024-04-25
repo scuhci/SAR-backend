@@ -1,16 +1,18 @@
 const natural = require('natural');
-const tokenizer = new natural.WordTokenizer();
 const { search, app } = require("google-play-scraper");
-const fs = require("fs");
-
-// Import the cors middleware
-const cors = require('cors'); 
-
 const { cleanText, jsonToCsv } = require('../utilities/jsonToCsv');
+const permissionsController = require('./permissionsController');
+const standardPermissionsList = require('./permissionsConfig');
+
 const path = require('path');
 const file_name = path.basename(__filename);
+const cors = require('cors'); 
 
-// Function to calculate similarity
+let csvData;
+let globalQuery;
+let includePermissions;
+
+// Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
   const intersection = new Set([...set1].filter(x => set2.has(x)));
   const union = new Set([...set1, ...set2]);
@@ -18,20 +20,24 @@ function calculateJaccardSimilarity(set1, set2) {
   return similarity;
 }
 
-// Function to calculate similarity score for search results
+// Calculate similarity score for search results
 function calculateSimilarityScore(query, result) {
+  const tokenizer = new natural.WordTokenizer();
   const queryTokens = new Set(tokenizer.tokenize(query.toLowerCase()));
   const resultTokens = new Set(tokenizer.tokenize(result.toLowerCase()));
   const similarity = calculateJaccardSimilarity(queryTokens, resultTokens);
   return similarity;
 }
 
-let csvData;
-let globalQuery; // A global variable to store the query
-
+// Calculate similarity score and add it to the result object
+function calculateResultSimilarityScore(result) {
+  result.similarityScore = calculateSimilarityScore(globalQuery, result.title + ' ' + result.description);
+  return result;
+}
 
 const searchController = async (req, res) => {
   const query = req.query.query;
+  includePermissions = req.query.includePermissions === 'true';
   console.log('[%s] Query Passed: %s\n', file_name, query);
 
   res.set("Access-Control-Allow-Origin", "*");
@@ -47,12 +53,13 @@ const searchController = async (req, res) => {
     // Search for the main query
     const mainResults = await search({ term: query });
 
-    // Perform a secondary search for each primary result
+    // Secondary search for each primary result
     const relatedResults = [];
     for (const mainResult of mainResults) {
       console.log('[%s] Main Title Fetched: %s\n', file_name, mainResult.title);
       const relatedQuery = `related to ${mainResult.title}`;
       relatedResults.push(await search({ term: relatedQuery }));
+
       // Introduce a delay between requests (e.g., 1 second)
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
@@ -64,16 +71,17 @@ const searchController = async (req, res) => {
         results.map((result) => ({ ...result, source: "related app" }))
       ),
     ];
+
     console.log('[%s] [%d] allResults:\n-------------------------\n', file_name, allResults.length);
     for (const result of allResults)
     {
       console.log('[%s] %s\n', file_name, result.title);
     }
+
     // Fetch additional details (including genre) for each result
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
         try {
-          // Introduce a delay between requests
           await new Promise((resolve) => setTimeout(resolve, 2000));
           const appDetails = await app({ appId: appInfo.appId });
           return { ...appInfo, ...appDetails };
@@ -83,13 +91,16 @@ const searchController = async (req, res) => {
         }
       })
     );
+
     // Filter out apps with missing details
     const validResults = detailedResults.filter((appInfo) => appInfo !== null);
+
     console.log('[%s] [%d] validResults:\n-------------------------\n', file_name, validResults.length);
     for (const result of validResults)
     {
       console.log('[%s] %s\n', file_name, result.title);
     }
+
     // Remove duplicates based on appId
     const uniqueResults = Array.from(
       new Set(validResults.map((appInfo) => appInfo.appId))
@@ -98,54 +109,81 @@ const searchController = async (req, res) => {
     });
 
     if (uniqueResults.length === 0) {
-      return res
-        .status(404)
-        .json({ message: `Search for '${query}' did not return any results.` });
+      throw new Error(`Search for '${query}' did not return any results.`);
+    }
+    
+    // Calculate similarity score for all unique results
+    const resultsWithSimilarityScore = uniqueResults.map(calculateResultSimilarityScore);
+
+    // Sort the results by similarity score in descending order
+    resultsWithSimilarityScore.sort((a, b) => b.similarityScore - a.similarityScore);
+
+
+    // Slice the results with similarity score to the first 5 for the response
+    const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(0, 5);
+
+    console.log('[%s] [%d] results shown on SMAR Website:\n-------------------------\n', file_name, limitedResultsWithSimilarityScore.length);
+    for (const result of limitedResultsWithSimilarityScore) {
+      console.log('[%s] Title: %s, Similarity Score: %d\n', file_name, result.title, result.similarityScore);
     }
 
-    csvData = uniqueResults;
+    if (limitedResultsWithSimilarityScore.length === 0) {
+      throw new Error(`Search for '${query}' did not return any results.`);
+    }
+
+    // Apply cleanText to the summary and recentChanges properties of each result
+    const cleanedLimitedResults = limitedResultsWithSimilarityScore.map((result) => {
+      // Clean the summary column
+      if (result.summary) {
+        result.summary = cleanText(result.summary);
+      }
+
+      // Clean the recentChanges column
+      if (result.recentChanges) {
+        result.recentChanges = cleanText(result.recentChanges);
+      }
+
+      return result;
+    });
+
+    // Check if includePermissions is true
+    if (includePermissions) {
+      // If includePermissions is true, call the fetchPermissions function
+      console.log('Calling fetchPermissions method');
+      const permissionsResults = await permissionsController.fetchPermissions(uniqueResults);
+      // Slice the permissionsResults to include only the first 5 results
+      const limitedPermissionsResults = permissionsResults.slice(0, 5);
+     
+      // Process permissions data for the sliced 5 results
+      const processedPermissionsResults = limitedPermissionsResults.map(appInfo => {
+      const permissionsWithSettings = standardPermissionsList.map(permission => ({
+        permission: permission,
+        // type: permission.type,
+        isPermissionRequired: appInfo.permissions.some(appPermission => appPermission.permission === permission) ? true : false,
+      }));
+
+      // Return appInfo with permissions
+      return { ...appInfo, permissions: permissionsWithSettings };
+    });
+
+      resultsToSend = processedPermissionsResults
+      csvData = permissionsResults;
+    }
+    else{
+      resultsToSend = cleanedLimitedResults
+      csvData = uniqueResults;
+    }
+    
     console.log('[%s] [%d] entries to be forwarded to CSV:\n-------------------------\n', file_name, csvData.length);
     for (const result of csvData)
     {
       console.log('[%s] %s\n', file_name, result.title);
     }
     
-
-    // Limit the unique results to the first 5 for the response
-    const limitedUniqueResults = uniqueResults.slice(0, 5);
-    console.log('[%s] [%d] results shown on SMAR Website:\n-------------------------\n', file_name, limitedUniqueResults.length);
-    for (const result of limitedUniqueResults)
-    {
-      console.log('[%s] Title: %s\n', file_name, result.title);
-    }
-
-    if (limitedUniqueResults.length === 0) {
-      return res
-        .status(404)
-        .json({ message: `Search for '${query}' did not return any results.` });
-    }
-
-    // Apply cleanText to the summary property of each result
-    const cleanedLimitedResults = limitedUniqueResults.map((result) => {
-      if (result.summary) {
-        result.summary = cleanText(result.summary);
-      }
-
-      // Calculate similarity score and add it to the result object
-      result.similarityScore = calculateSimilarityScore(globalQuery, result.title + ' ' + result.description);
-
-      return result;
-    });
-
-    // Include totalCount and cleaned results in the response
-    const totalCount = uniqueResults.length;
-
-    res.json({ totalCount, results: cleanedLimitedResults });
+    return res.json({ totalCount: uniqueResults.length, results: resultsToSend });
   } catch (error) {
     console.error("Error occurred during search:", error);
-    res
-      .status(500)
-      .json({ error: "An error occurred while processing your request." });
+    return res.status(500).json({ error: "An error occurred while processing your request." });
   }
 };
 
@@ -158,7 +196,7 @@ const downloadCSV = (req, res) => {
 
     try {
       // Use the existing jsonToCsv method to convert JSON to CSV
-      const csv = jsonToCsv(csvData);
+      const csv = jsonToCsv(csvData, standardPermissionsList, includePermissions);
       // Get the current timestamp in the desired format
       const timestamp = new Date().toLocaleString('en-US', {
         month: 'numeric',
