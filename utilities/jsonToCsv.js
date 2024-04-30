@@ -45,7 +45,6 @@ function jsonToCsv(jsonData, standardPermissionsList, includePermissions = false
     'developerInternalID',
     'androidVersionText',
     'histogram',
-    'reviews',
     'minInstalls',
     'priceText',
     'description',
