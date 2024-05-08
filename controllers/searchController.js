@@ -118,7 +118,6 @@ const searchController = async (req, res) => {
     // Sort the results by similarity score in descending order
     resultsWithSimilarityScore.sort((a, b) => b.similarityScore - a.similarityScore);
 
-
     // Slice the results with similarity score to the first 5 for the response
     const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(0, 5);
 
