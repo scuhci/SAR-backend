@@ -1,7 +1,7 @@
 const gplay = require("google-play-scraper");
 const {jsonToCsv} = require('../utilities/jsonToCsv');
 
-const MAX_REVIEWS_COUNT = 10000; //Fixed for now, can be updated for future development
+const MAX_REVIEWS_COUNT = 10000; //Fixed value for now, can be updated for future development
 
 const fetchReviews = async (appId, reviewsCount) => {
   const options = {
@@ -50,6 +50,7 @@ const scrapeReviews = async (req, res) => {
     // Get the actual count of reviews
     const appDetails = await gplay.app({ appId: appId });
     const reviewsCount = appDetails.reviews;
+
     console.log(`App ${appId} contains ${reviewsCount} reviews`);
 
     // Fetch reviews based on the count or the maximum limit
@@ -61,6 +62,8 @@ const scrapeReviews = async (req, res) => {
     // Convert reviews data to CSV format
     const csvData = jsonToCsv(reviews);
 
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
     // Set response headers for CSV download
     res.setHeader('Content-Disposition', `attachment; filename="${appId}_reviews.csv"`);
     res.setHeader('Content-Type', 'text/csv');
@@ -68,7 +71,6 @@ const scrapeReviews = async (req, res) => {
     // Send the CSV data as a response
     res.status(200).send(csvData);
 
-    // res.json(reviews);
   } catch (error) {
     console.error("Error getting reviews:", error);
     res.status(500).json({ error: "An error occurred while getting reviews." });
