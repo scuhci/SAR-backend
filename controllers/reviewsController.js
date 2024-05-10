@@ -3,7 +3,7 @@ const {jsonToCsv} = require('../utilities/jsonToCsv');
 
 const MAX_REVIEWS_COUNT = 10000; //Fixed for now, can be updated for future development
 
-const fetchReviews = async (appId) => {
+const fetchReviews = async (appId, reviewsCount) => {
   const options = {
     appId: appId,
     sort: gplay.sort.NEWEST,
@@ -15,8 +15,10 @@ const fetchReviews = async (appId) => {
     let reviews = [];
     let nextToken;
     let totalFetched = 0;
+    let numReviews = reviewsCount && reviewsCount < MAX_REVIEWS_COUNT ? reviewsCount : MAX_REVIEWS_COUNT;
+    console.log(`Fetching ${numReviews} Reviews for AppId: ${appId}`);
 
-    while (totalFetched < MAX_REVIEWS_COUNT) {
+    while (totalFetched < numReviews) {
       if (nextToken) {
         options.nextPaginationToken = nextToken;
       }
@@ -30,8 +32,8 @@ const fetchReviews = async (appId) => {
       nextToken = result.nextPaginationToken;
     }
 
-    if(reviews.length > MAX_REVIEWS_COUNT){
-      reviews = reviews.slice(0, MAX_REVIEWS_COUNT);
+    if(reviews.length > numReviews){
+      reviews = reviews.slice(0, numReviews);
     }
 
     return reviews;
@@ -45,7 +47,13 @@ const scrapeReviews = async (req, res) => {
   const { appId } = req.query;
 
   try {
-    const reviews = await fetchReviews(appId);
+    // Get the actual count of reviews
+    const appDetails = await gplay.app({ appId: appId });
+    const reviewsCount = appDetails.reviews;
+    console.log(`App ${appId} contains ${reviewsCount} reviews`);
+
+    // Fetch reviews based on the count or the maximum limit
+    const reviews = await fetchReviews(appId, reviewsCount);
     console.log(`Received ${reviews.length} reviews for app: ${appId}`);
 
     res.set("Access-Control-Allow-Origin", "*");
