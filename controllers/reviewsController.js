@@ -29,10 +29,10 @@ const fetchReviews = async (appId, reviewsCount) => {
       // Process each review to include the criteria section
       const processedReviews = newData.map(review => {
         const criterias = review.criterias || []; // Get criterias section
-        const criteriaData = criterias.map(criteria => `${criteria.criteria}: ${criteria.rating}`).join(','); // Convert criterias to string
+        const criteriaData = criterias.map(criteria => `criteria: ${criteria.criteria}: rating: ${criteria.rating}`).join(';'); // Convert criterias to string
         return {
           ...review,
-          criterias_rating: criteriaData 
+          criterias: criteriaData 
         };
       });
 
@@ -66,6 +66,11 @@ const scrapeReviews = async (req, res) => {
     // Fetch reviews based on the count or the maximum limit
     const reviews = await fetchReviews(appId, reviewsCount);
     console.log(`Received ${reviews.length} reviews for app: ${appId}`);
+
+    console.log("First 10 reviews:");
+    for (let i = 0; i < Math.min(10, reviews.length); i++) {
+      console.log(JSON.stringify(reviews[i]));
+    }
 
     res.set("Access-Control-Allow-Origin", "*");
 
