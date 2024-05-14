@@ -26,7 +26,17 @@ const fetchReviews = async (appId, reviewsCount) => {
       const result = await gplay.reviews(options);
       const newData = result.data || [];
 
-      reviews = reviews.concat(newData);
+      // Process each review to include the criteria section
+      const processedReviews = newData.map(review => {
+        const criterias = review.criterias || []; // Get criterias section
+        const criteriaData = criterias.map(criteria => `${criteria.criteria}: ${criteria.rating}`).join(','); // Convert criterias to string
+        return {
+          ...review,
+          criterias_rating: criteriaData 
+        };
+      });
+
+      reviews = reviews.concat(processedReviews);
       totalFetched += newData.length;
       console.log(`Total reviews fetched so far: ${totalFetched}`);
       nextToken = result.nextPaginationToken;
@@ -35,6 +45,13 @@ const fetchReviews = async (appId, reviewsCount) => {
     if(reviews.length > numReviews){
       reviews = reviews.slice(0, numReviews);
     }
+
+    // Modify the header of the criterias section
+    reviews.forEach(review => {
+      if (review.criterias) {
+        review.criterias = "criteria:rating";
+      }
+    });
 
     return reviews;
   } catch (error) {

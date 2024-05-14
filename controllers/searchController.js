@@ -31,7 +31,7 @@ function calculateSimilarityScore(query, result) {
 
 // Calculate similarity score and add it to the result object
 function calculateResultSimilarityScore(result) {
-  result.similarityScore = calculateSimilarityScore(globalQuery, result.title + ' ' + result.description);
+  result.similarityScore = calculateSimilarityScore(globalQuery, result.title);
   return result;
 }
 
@@ -111,14 +111,11 @@ const searchController = async (req, res) => {
     if (uniqueResults.length === 0) {
       throw new Error(`Search for '${query}' did not return any results.`);
     }
-    
+
     // Calculate similarity score for all unique results
     const resultsWithSimilarityScore = uniqueResults.map(calculateResultSimilarityScore);
 
-    // Sort the results by similarity score in descending order
-    resultsWithSimilarityScore.sort((a, b) => b.similarityScore - a.similarityScore);
-
-    // Slice the results with similarity score to the first 5 for the response
+    // Limit the results with similarity score to the first 5 for the response
     const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(0, 5);
 
     console.log('[%s] [%d] results shown on SMAR Website:\n-------------------------\n', file_name, limitedResultsWithSimilarityScore.length);
