@@ -29,7 +29,7 @@ const fetchReviews = async (appId, reviewsCount) => {
       // Process each review to include the criteria section
       const processedReviews = newData.map(review => {
         const criterias = review.criterias || []; // Get criterias section
-        const criteriaData = criterias.map(criteria => `criteria: ${criteria.criteria}: rating: ${criteria.rating}`).join(';'); // Convert criterias to string
+        const criteriaData = criterias.map(criteria => `criteria: ${criteria.criteria}: rating: ${criteria.rating}`).join('; '); // Convert criterias to string
         return {
           ...review,
           criterias: criteriaData 
