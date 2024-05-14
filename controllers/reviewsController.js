@@ -46,13 +46,6 @@ const fetchReviews = async (appId, reviewsCount) => {
       reviews = reviews.slice(0, numReviews);
     }
 
-    // Modify the header of the criterias section
-    reviews.forEach(review => {
-      if (review.criterias) {
-        review.criterias = "criteria:rating";
-      }
-    });
-
     return reviews;
   } catch (error) {
     console.error("Error scraping reviews:", error);

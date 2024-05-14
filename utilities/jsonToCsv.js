@@ -55,6 +55,7 @@ function jsonToCsv(jsonData, standardPermissionsList, includePermissions = false
     'similarityScore',
     'permissions', //This is the permissions data structure, which has a child object that contains individual permissions and their labels 
     //individual permissions and labels are added separately
+    'criterias', //Removing this to process criterias_rating separately
   ];
 
   // Extract column headers dynamically from the first object in jsonData
