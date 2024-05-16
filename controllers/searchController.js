@@ -12,7 +12,6 @@ const cors = require('cors');
 
 let csvData;
 let globalQuery;
-let includePermissions;
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -39,7 +38,7 @@ function calculateResultSimilarityScore(result) {
 
 const searchController = async (req, res) => {
   const query = req.query.query;
-  includePermissions = req.query.includePermissions === 'true';
+  const permissions = req.query.includePermissions === 'true';
   console.log('[%s] Query Passed: %s\n', file_name, query);
 
   res.set("Access-Control-Allow-Origin", "*");
@@ -145,7 +144,7 @@ const searchController = async (req, res) => {
     });
 
     // Check if includePermissions is true
-    if (includePermissions) {
+    if (permissions) {
       // If includePermissions is true, call the fetchPermissions function
       console.log('Calling fetchPermissions method');
       const permissionsResults = await permissionsController.fetchPermissions(uniqueResults);
@@ -177,7 +176,8 @@ const searchController = async (req, res) => {
     {
       console.log('[%s] %s\n', file_name, result.title);
     }
-    node_ttl.push(query, csvData, null, 500);
+    const csvInfo = {csvData: csvData, permissions: permissions};
+    node_ttl.push(query, csvInfo, null, 500);
     return res.json({ totalCount: uniqueResults.length, results: resultsToSend });
   } catch (error) {
     console.error("Error occurred during search:", error);
@@ -196,8 +196,8 @@ const downloadCSV = (req, res) => {
       // Use the existing jsonToCsv method to convert JSON to CSV
       const query = req.query.query;
       console.log("Query used for CSV: %s\n", query);
-      var QueryCSV = node_ttl.get(query);
-      const csv = jsonToCsv(QueryCSV, standardPermissionsList, includePermissions);
+      var csvInfo = node_ttl.get(query);
+      const csv = jsonToCsv(csvInfo.csvData, standardPermissionsList, csvInfo.permissions);
       // Get the current timestamp in the desired format
       const timestamp = new Date().toLocaleString('en-US', {
         month: 'numeric',
