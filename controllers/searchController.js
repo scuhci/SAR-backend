@@ -176,8 +176,7 @@ const searchController = async (req, res) => {
     {
       console.log('[%s] %s\n', file_name, result.title);
     }
-    const csvInfo = {csvData: csvData, permissions: permissions};
-    node_ttl.push(query, csvInfo, null, 500);
+    node_ttl.push(query, csvData, null, 500);
     return res.json({ totalCount: uniqueResults.length, results: resultsToSend });
   } catch (error) {
     console.error("Error occurred during search:", error);
@@ -195,9 +194,10 @@ const downloadCSV = (req, res) => {
     try {
       // Use the existing jsonToCsv method to convert JSON to CSV
       const query = req.query.query;
+      const permissions = req.query.includePermissions === 'true';
       console.log("Query used for CSV: %s\n", query);
       var csvInfo = node_ttl.get(query);
-      const csv = jsonToCsv(csvInfo.csvData, standardPermissionsList, csvInfo.permissions);
+      const csv = jsonToCsv(csvInfo, standardPermissionsList, permissions);
       // Get the current timestamp in the desired format
       const timestamp = new Date().toLocaleString('en-US', {
         month: 'numeric',
