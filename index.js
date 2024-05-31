@@ -6,7 +6,6 @@ const { scrapeReviews } = require('./controllers/reviewsController');
 const path = require('path');
 const app = express();
 const port = 5001;
-const logger = require('log-timestamp'); // adding timestamps to logs
 
 // change for deployment
 const _dirname = path.dirname("");

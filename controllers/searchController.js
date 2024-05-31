@@ -3,6 +3,8 @@ const { search, app } = require("google-play-scraper");
 const { cleanText, jsonToCsv } = require('../utilities/jsonToCsv');
 const permissionsController = require('./permissionsController');
 const standardPermissionsList = require('./permissionsConfig');
+const nodeTTL = require('node-ttl');
+var node_ttl = new nodeTTL();
 
 const path = require('path');
 const file_name = path.basename(__filename);
@@ -10,7 +12,6 @@ const cors = require('cors');
 
 let csvData;
 let globalQuery;
-let includePermissions;
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -37,7 +38,7 @@ function calculateResultSimilarityScore(result) {
 
 const searchController = async (req, res) => {
   const query = req.query.query;
-  includePermissions = req.query.includePermissions === 'true';
+  const permissions = req.query.includePermissions === 'true';
   console.log('[%s] Query Passed: %s\n', file_name, query);
 
   res.set("Access-Control-Allow-Origin", "*");
@@ -143,7 +144,7 @@ const searchController = async (req, res) => {
     });
 
     // Check if includePermissions is true
-    if (includePermissions) {
+    if (permissions) {
       // If includePermissions is true, call the fetchPermissions function
       console.log('Calling fetchPermissions method');
       const permissionsResults = await permissionsController.fetchPermissions(uniqueResults);
@@ -175,7 +176,7 @@ const searchController = async (req, res) => {
     {
       console.log('[%s] %s\n', file_name, result.title);
     }
-    
+    node_ttl.push(query, csvData, null, 500);
     return res.json({ totalCount: uniqueResults.length, results: resultsToSend });
   } catch (error) {
     console.error("Error occurred during search:", error);
@@ -192,7 +193,11 @@ const downloadCSV = (req, res) => {
 
     try {
       // Use the existing jsonToCsv method to convert JSON to CSV
-      const csv = jsonToCsv(csvData, standardPermissionsList, includePermissions);
+      const query = req.query.query;
+      const permissions = req.query.includePermissions === 'true';
+      console.log("Query used for CSV: %s\n", query);
+      var csvInfo = node_ttl.get(query);
+      const csv = jsonToCsv(csvInfo, standardPermissionsList, permissions);
       // Get the current timestamp in the desired format
       const timestamp = new Date().toLocaleString('en-US', {
         month: 'numeric',
@@ -211,7 +216,7 @@ const downloadCSV = (req, res) => {
       const formattedTimestamp = `${dateComponents[0]}${dateComponents[1]}${timeComponents[0]}`;
 
       // Suggest a filename to the browser
-      const suggestedFilename = `${globalQuery}_${formattedTimestamp}.csv`;
+      const suggestedFilename = `${query}_${formattedTimestamp}.csv`;
 
       res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
       
