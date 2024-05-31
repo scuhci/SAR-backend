@@ -1,7 +1,7 @@
 const gplay = require("google-play-scraper");
 const {jsonToCsv} = require('../utilities/jsonToCsv');
 
-const MAX_REVIEWS_COUNT = 10000; //Fixed value for now, can be updated for future development
+const MAX_REVIEWS_COUNT = 100000; //Fixed value for now, can be updated for future development
 
 const fetchReviews = async (appId, reviewsCount) => {
   const options = {
