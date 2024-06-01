@@ -36,6 +36,18 @@ function calculateResultSimilarityScore(result) {
   return result;
 }
 
+// Fetch and process permissions for apps
+async function fetchAndProcessPermissions(apps) {
+  const permissionsResults = await permissionsController.fetchPermissions(apps);
+  return permissionsResults.map(appInfo => {
+    const permissionsWithSettings = standardPermissionsList.map(permission => ({
+      permission: permission,
+      isPermissionRequired: appInfo.permissions.some(appPermission => appPermission.permission === permission) ? true : false,
+    }));
+    return { ...appInfo, permissions: permissionsWithSettings };
+  });
+}
+
 const searchController = async (req, res) => {
   const query = req.query.query;
   const permissions = req.query.includePermissions === 'true';
@@ -51,133 +63,134 @@ const searchController = async (req, res) => {
   globalQuery = query;
 
   try {
-    // Search for the main query
-    const mainResults = await search({ term: query });
+    let mainResults = [];
 
-    // Secondary search for each primary result
-    const relatedResults = [];
-    for (const mainResult of mainResults) {
-      console.log('[%s] Main Title Fetched: %s\n', file_name, mainResult.title);
-      const relatedQuery = `related to ${mainResult.title}`;
-      relatedResults.push(await search({ term: relatedQuery }));
+    // Check if the query is an app ID
+    if (query.startsWith('com.')) {
+      console.log(`[${file_name}] Query is identified as an app ID: ${query}`);
+      try {
+        const appDetails = await app({ appId: query });
 
-      // Introduce a delay between requests (e.g., 1 second)
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-    }
-
-    // Combine the main and secondary results
-    const allResults = [
-      ...mainResults.map((result) => ({ ...result, source: "primary search" })),
-      ...relatedResults.flatMap((results) =>
-        results.map((result) => ({ ...result, source: "related app" }))
-      ),
-    ];
-
-    console.log('[%s] [%d] allResults:\n-------------------------\n', file_name, allResults.length);
-    for (const result of allResults)
-    {
-      console.log('[%s] %s\n', file_name, result.title);
-    }
-
-    // Fetch additional details (including genre) for each result
-    const detailedResults = await Promise.all(
-      allResults.map(async (appInfo) => {
-        try {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          const appDetails = await app({ appId: appInfo.appId });
-          return { ...appInfo, ...appDetails };
-        } catch (error) {
-          console.error("Error fetching app details:", error);
-          return null;
+        if (permissions) {
+          const processedPermissionsResults = await fetchAndProcessPermissions([appDetails]);
+          return res.json({ totalCount: 1, results: processedPermissionsResults });
         }
-      })
-    );
 
-    // Filter out apps with missing details
-    const validResults = detailedResults.filter((appInfo) => appInfo !== null);
+        return res.json({ totalCount: 1, results: [appDetails] });
+      } catch (error) {
+        console.error("Error fetching app details for app ID:", error);
+        return res.status(404).json({ error: "App ID not found." });
+      }
+    } else {
+      // Perform the main search if the query is not an app ID
+      mainResults = await search({ term: query });
 
-    console.log('[%s] [%d] validResults:\n-------------------------\n', file_name, validResults.length);
-    for (const result of validResults)
-    {
-      console.log('[%s] %s\n', file_name, result.title);
-    }
+      // Secondary search for each primary result
+      const relatedResults = [];
+      for (const mainResult of mainResults) {
+        console.log('[%s] Main Title Fetched: %s\n', file_name, mainResult.title);
+        const relatedQuery = `related to ${mainResult.title}`;
+        relatedResults.push(await search({ term: relatedQuery }));
 
-    // Remove duplicates based on appId
-    const uniqueResults = Array.from(
-      new Set(validResults.map((appInfo) => appInfo.appId))
-    ).map((appId) => {
-      return validResults.find((appInfo) => appInfo.appId === appId);
-    });
-
-    if (uniqueResults.length === 0) {
-      throw new Error(`Search for '${query}' did not return any results.`);
-    }
-
-    // Calculate similarity score for all unique results
-    const resultsWithSimilarityScore = uniqueResults.map(calculateResultSimilarityScore);
-
-    // Limit the results with similarity score to the first 5 for the response
-    const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(0, 5);
-
-    console.log('[%s] [%d] results shown on SMAR Website:\n-------------------------\n', file_name, limitedResultsWithSimilarityScore.length);
-    for (const result of limitedResultsWithSimilarityScore) {
-      console.log('[%s] Title: %s, Similarity Score: %d\n', file_name, result.title, result.similarityScore);
-    }
-
-    if (limitedResultsWithSimilarityScore.length === 0) {
-      throw new Error(`Search for '${query}' did not return any results.`);
-    }
-
-    // Apply cleanText to the summary and recentChanges properties of each result
-    const cleanedLimitedResults = limitedResultsWithSimilarityScore.map((result) => {
-      // Clean the summary column
-      if (result.summary) {
-        result.summary = cleanText(result.summary);
+        // Introduce a delay between requests (e.g., 1 second)
+        await new Promise((resolve) => setTimeout(resolve, 3000));
       }
 
-      // Clean the recentChanges column
-      if (result.recentChanges) {
-        result.recentChanges = cleanText(result.recentChanges);
+      // Combine the main and secondary results
+      const allResults = [
+        ...mainResults.map((result) => ({ ...result, source: "primary search" })),
+        ...relatedResults.flatMap((results) =>
+          results.map((result) => ({ ...result, source: "similar app" }))
+        ),
+      ];
+
+      console.log('[%s] [%d] allResults:\n-------------------------\n', file_name, allResults.length);
+      for (const result of allResults) {
+        console.log('[%s] %s\n', file_name, result.title);
       }
 
-      return result;
-    });
+      // Fetch additional details (including genre) for each result
+      const detailedResults = await Promise.all(
+        allResults.map(async (appInfo) => {
+          try {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            const appDetails = await app({ appId: appInfo.appId });
+            return { ...appInfo, ...appDetails };
+          } catch (error) {
+            console.error("Error fetching app details:", error);
+            return null;
+          }
+        })
+      );
 
-    // Check if includePermissions is true
-    if (permissions) {
-      // If includePermissions is true, call the fetchPermissions function
-      console.log('Calling fetchPermissions method');
-      const permissionsResults = await permissionsController.fetchPermissions(uniqueResults);
-      // Slice the permissionsResults to include only the first 5 results
-      const limitedPermissionsResults = permissionsResults.slice(0, 5);
-     
-      // Process permissions data for the sliced 5 results
-      const processedPermissionsResults = limitedPermissionsResults.map(appInfo => {
-      const permissionsWithSettings = standardPermissionsList.map(permission => ({
-        permission: permission,
-        // type: permission.type,
-        isPermissionRequired: appInfo.permissions.some(appPermission => appPermission.permission === permission) ? true : false,
-      }));
+      // Filter out apps with missing details
+      const validResults = detailedResults.filter((appInfo) => appInfo !== null);
 
-      // Return appInfo with permissions
-      return { ...appInfo, permissions: permissionsWithSettings };
-    });
+      console.log('[%s] [%d] validResults:\n-------------------------\n', file_name, validResults.length);
+      for (const result of validResults) {
+        console.log('[%s] %s\n', file_name, result.title);
+      }
 
-      resultsToSend = processedPermissionsResults
-      csvData = permissionsResults;
+      // Remove duplicates based on appId
+      const uniqueResults = Array.from(
+        new Set(validResults.map((appInfo) => appInfo.appId))
+      ).map((appId) => {
+        return validResults.find((appInfo) => appInfo.appId === appId);
+      });
+
+      if (uniqueResults.length === 0) {
+        throw new Error(`Search for '${query}' did not return any results.`);
+      }
+
+      // Calculate similarity score for all unique results
+      const resultsWithSimilarityScore = uniqueResults.map(calculateResultSimilarityScore);
+
+      // Limit the results with similarity score to the first 5 for the response
+      const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(0, 5);
+
+      console.log('[%s] [%d] results shown on SMAR Website:\n-------------------------\n', file_name, limitedResultsWithSimilarityScore.length);
+      for (const result of limitedResultsWithSimilarityScore) {
+        console.log('[%s] Title: %s, Similarity Score: %d\n', file_name, result.title, result.similarityScore);
+      }
+
+      if (limitedResultsWithSimilarityScore.length === 0) {
+        throw new Error(`Search for '${query}' did not return any results.`);
+      }
+
+      // Apply cleanText to the summary and recentChanges properties of each result
+      const cleanedLimitedResults = limitedResultsWithSimilarityScore.map((result) => {
+        // Clean the summary column
+        if (result.summary) {
+          result.summary = cleanText(result.summary);
+        }
+
+        // Clean the recentChanges column
+        if (result.recentChanges) {
+          result.recentChanges = cleanText(result.recentChanges);
+        }
+
+        return result;
+      });
+
+      // Check if includePermissions is true
+      if (permissions) {
+        // If includePermissions is true, call the fetchPermissions function
+        console.log('Calling fetchPermissions method');
+        const processedPermissionsResults = await fetchAndProcessPermissions(uniqueResults);
+        resultsToSend = processedPermissionsResults.slice(0, 5);
+        csvData = permissionsResults;
+      } else {
+        resultsToSend = cleanedLimitedResults;
+        csvData = uniqueResults;
+      }
+
+      console.log('[%s] [%d] entries to be forwarded to CSV:\n-------------------------\n', file_name, csvData.length);
+      for (const result of csvData) {
+        console.log('[%s] %s\n', file_name, result.title);
+      }
+      node_ttl.push(query, csvData, null, 500);
+      return res.json({ totalCount: uniqueResults.length, results: resultsToSend });
     }
-    else{
-      resultsToSend = cleanedLimitedResults
-      csvData = uniqueResults;
-    }
-    
-    console.log('[%s] [%d] entries to be forwarded to CSV:\n-------------------------\n', file_name, csvData.length);
-    for (const result of csvData)
-    {
-      console.log('[%s] %s\n', file_name, result.title);
-    }
-    node_ttl.push(query, csvData, null, 500);
-    return res.json({ totalCount: uniqueResults.length, results: resultsToSend });
   } catch (error) {
     console.error("Error occurred during search:", error);
     return res.status(500).json({ error: "An error occurred while processing your request." });
