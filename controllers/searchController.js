@@ -1,5 +1,5 @@
 const natural = require('natural');
-const { search, app } = require("google-play-scraper");
+const { search, app } = require("app-store-scraper");
 const { cleanText, jsonToCsv } = require('../utilities/jsonToCsv');
 const permissionsController = require('./permissionsController');
 const standardPermissionsList = require('./permissionsConfig');
@@ -131,8 +131,8 @@ const searchController = async (req, res) => {
     // Apply cleanText to the summary and recentChanges properties of each result
     const cleanedLimitedResults = limitedResultsWithSimilarityScore.map((result) => {
       // Clean the summary column
-      if (result.summary) {
-        result.summary = cleanText(result.summary);
+      if (result.description) {
+        result.description = cleanText(result.description);
       }
 
       // Clean the recentChanges column

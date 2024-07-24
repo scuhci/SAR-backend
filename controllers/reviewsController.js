@@ -1,4 +1,4 @@
-const gplay = require("google-play-scraper");
+const gplay = require("app-store-scraper");
 const {jsonToCsv} = require('../utilities/jsonToCsv');
 
 const MAX_REVIEWS_COUNT = 100000; //Fixed value for now, can be updated for future development
@@ -6,8 +6,7 @@ const MAX_REVIEWS_COUNT = 100000; //Fixed value for now, can be updated for futu
 const fetchReviews = async (appId, reviewsCount) => {
   const options = {
     appId: appId,
-    sort: gplay.sort.NEWEST,
-    lang: 'en',
+    sort: gplay.sort.RECENT,
     country: 'us',
   };
 

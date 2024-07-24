@@ -1,4 +1,4 @@
-const { permissions: fetchPermissionsFromGooglePlay } = require('google-play-scraper');
+const { permissions: fetchPermissionsFromGooglePlay } = require('app-store-scraper');
 
 const fetchPermissions = async (results) => {
   try {
