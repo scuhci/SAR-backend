@@ -32,6 +32,9 @@ function jsonToCsv(jsonData, standardPermissionsList, includePermissions = false
 
   // Define columns to exclude
   const columnsToExclude = [
+    'screenshots',
+    'ipadScreenshots',
+    'appletvScreenshots',
     'comments',
     'descriptionHTML',
     'updated',
@@ -43,7 +46,7 @@ function jsonToCsv(jsonData, standardPermissionsList, includePermissions = false
     'familyGenreID',
     'familyGenre',
     'developerInternalID',
-    'androidVersionText',
+    'requiredOsVersionText',
     'histogram',
     'minInstalls',
     'priceText',
