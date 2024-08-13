@@ -1,21 +1,24 @@
-const natural = require('natural');
+const natural = require("natural");
 const { search, app } = require("google-play-scraper");
-const { cleanText, jsonToCsv } = require('../utilities/jsonToCsv');
-const permissionsController = require('./permissionsController');
-const standardPermissionsList = require('./permissionsConfig');
-const nodeTTL = require('node-ttl');
+const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
+const permissionsController = require("./permissionsController");
+const standardPermissionsList = require("./permissionsConfig");
+const json_raw = require("../package.json");
+const nodeTTL = require("node-ttl");
 var node_ttl = new nodeTTL();
 
-const path = require('path');
+const path = require("path");
 const file_name = path.basename(__filename);
-const cors = require('cors'); 
+const cors = require("cors");
+const { globalAgent } = require("node:http");
+const router = require("../routes/searchRoutes");
 
 let csvData;
 let globalQuery;
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
-  const intersection = new Set([...set1].filter(x => set2.has(x)));
+  const intersection = new Set([...set1].filter((x) => set2.has(x)));
   const union = new Set([...set1, ...set2]);
   const similarity = intersection.size / union.size;
   return similarity;
@@ -38,17 +41,15 @@ function calculateResultSimilarityScore(result) {
 
 const searchController = async (req, res) => {
   const query = req.query.query;
-  const permissions = req.query.includePermissions === 'true';
-  console.log('[%s] Query Passed: %s\n', file_name, query);
+  const permissions = req.query.includePermissions === "true";
+  console.log("[%s] Query Passed: %s\n", file_name, query);
 
   res.set("Access-Control-Allow-Origin", "*");
 
   if (!query) {
-    console.error('Missing search query');
+    console.error("Missing search query");
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
-
-  globalQuery = query;
 
   try {
     // Search for the main query
@@ -57,7 +58,7 @@ const searchController = async (req, res) => {
     // Secondary search for each primary result
     const relatedResults = [];
     for (const mainResult of mainResults) {
-      console.log('[%s] Main Title Fetched: %s\n', file_name, mainResult.title);
+      console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
       const relatedQuery = `related to ${mainResult.title}`;
       relatedResults.push(await search({ term: relatedQuery }));
 
@@ -73,10 +74,13 @@ const searchController = async (req, res) => {
       ),
     ];
 
-    console.log('[%s] [%d] allResults:\n-------------------------\n', file_name, allResults.length);
-    for (const result of allResults)
-    {
-      console.log('[%s] %s\n', file_name, result.title);
+    console.log(
+      "[%s] [%d] allResults:\n-------------------------\n",
+      file_name,
+      allResults.length
+    );
+    for (const result of allResults) {
+      console.log("[%s] %s\n", file_name, result.title);
     }
 
     // Fetch additional details (including genre) for each result
@@ -96,10 +100,13 @@ const searchController = async (req, res) => {
     // Filter out apps with missing details
     const validResults = detailedResults.filter((appInfo) => appInfo !== null);
 
-    console.log('[%s] [%d] validResults:\n-------------------------\n', file_name, validResults.length);
-    for (const result of validResults)
-    {
-      console.log('[%s] %s\n', file_name, result.title);
+    console.log(
+      "[%s] [%d] validResults:\n-------------------------\n",
+      file_name,
+      validResults.length
+    );
+    for (const result of validResults) {
+      console.log("[%s] %s\n", file_name, result.title);
     }
 
     // Remove duplicates based on appId
@@ -114,14 +121,29 @@ const searchController = async (req, res) => {
     }
 
     // Calculate similarity score for all unique results
-    const resultsWithSimilarityScore = uniqueResults.map(calculateResultSimilarityScore);
+    globalQuery = query;
+    const resultsWithSimilarityScore = uniqueResults.map(
+      calculateResultSimilarityScore
+    );
 
     // Limit the results with similarity score to the first 5 for the response
-    const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(0, 5);
+    const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(
+      0,
+      5
+    );
 
-    console.log('[%s] [%d] results shown on SMAR Website:\n-------------------------\n', file_name, limitedResultsWithSimilarityScore.length);
+    console.log(
+      "[%s] [%d] results shown on SMAR Website:\n-------------------------\n",
+      file_name,
+      limitedResultsWithSimilarityScore.length
+    );
     for (const result of limitedResultsWithSimilarityScore) {
-      console.log('[%s] Title: %s, Similarity Score: %d\n', file_name, result.title, result.similarityScore);
+      console.log(
+        "[%s] Title: %s, Similarity Score: %d\n",
+        file_name,
+        result.title,
+        result.similarityScore
+      );
     }
 
     if (limitedResultsWithSimilarityScore.length === 0) {
@@ -129,59 +151,113 @@ const searchController = async (req, res) => {
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
-    const cleanedLimitedResults = limitedResultsWithSimilarityScore.map((result) => {
-      // Clean the summary column
-      if (result.summary) {
-        result.summary = cleanText(result.summary);
-      }
+    const cleanedLimitedResults = limitedResultsWithSimilarityScore.map(
+      (result) => {
+        // Clean the summary column
+        if (result.summary) {
+          result.summary = cleanText(result.summary);
+        }
 
-      // Clean the recentChanges column
-      if (result.recentChanges) {
-        result.recentChanges = cleanText(result.recentChanges);
-      }
+        // Clean the recentChanges column
+        if (result.recentChanges) {
+          result.recentChanges = cleanText(result.recentChanges);
+        }
 
-      return result;
-    });
+        return result;
+      }
+    );
 
     // Check if includePermissions is true
     if (permissions) {
       // If includePermissions is true, call the fetchPermissions function
-      console.log('Calling fetchPermissions method');
-      const permissionsResults = await permissionsController.fetchPermissions(uniqueResults);
+      console.log("Calling fetchPermissions method");
+      const permissionsResults = await permissionsController.fetchPermissions(
+        uniqueResults
+      );
       // Slice the permissionsResults to include only the first 5 results
       const limitedPermissionsResults = permissionsResults.slice(0, 5);
-     
+
       // Process permissions data for the sliced 5 results
-      const processedPermissionsResults = limitedPermissionsResults.map(appInfo => {
-      const permissionsWithSettings = standardPermissionsList.map(permission => ({
-        permission: permission,
-        // type: permission.type,
-        isPermissionRequired: appInfo.permissions.some(appPermission => appPermission.permission === permission) ? true : false,
-      }));
+      const processedPermissionsResults = limitedPermissionsResults.map(
+        (appInfo) => {
+          const permissionsWithSettings = standardPermissionsList.map(
+            (permission) => ({
+              permission: permission,
+              // type: permission.type,
+              isPermissionRequired: appInfo.permissions.some(
+                (appPermission) => appPermission.permission === permission
+              )
+                ? true
+                : false,
+            })
+          );
 
-      // Return appInfo with permissions
-      return { ...appInfo, permissions: permissionsWithSettings };
-    });
+          // Return appInfo with permissions
+          return { ...appInfo, permissions: permissionsWithSettings };
+        }
+      );
 
-      resultsToSend = processedPermissionsResults
+      resultsToSend = processedPermissionsResults;
       csvData = permissionsResults;
-    }
-    else{
-      resultsToSend = cleanedLimitedResults
+    } else {
+      resultsToSend = cleanedLimitedResults;
       csvData = uniqueResults;
     }
-    
-    console.log('[%s] [%d] entries to be forwarded to CSV:\n-------------------------\n', file_name, csvData.length);
-    for (const result of csvData)
-    {
-      console.log('[%s] %s\n', file_name, result.title);
+
+    console.log(
+      "[%s] [%d] entries to be forwarded to CSV:\n-------------------------\n",
+      file_name,
+      csvData.length
+    );
+    for (const result of csvData) {
+      console.log("[%s] %s\n", file_name, result.title);
     }
     node_ttl.push(query, csvData, null, 500);
-    return res.json({ totalCount: uniqueResults.length, results: resultsToSend });
+    return res.json({
+      totalCount: uniqueResults.length,
+      results: resultsToSend,
+    });
   } catch (error) {
     console.error("Error occurred during search:", error);
-    return res.status(500).json({ error: "An error occurred while processing your request." });
+    return res
+      .status(500)
+      .json({ error: "An error occurred while processing your request." });
   }
+};
+
+const downloadRelog = (req, res) => {
+  // creating a log file
+  // SMAR Version Number, Time/Date, Search Term, # Apps Scraped, Options Selected,
+  // Info text, Reviews Log?
+  cors()(req, res, () => {
+    try {
+      const logInfo = {
+        version: json_raw.version,
+        date_time: new Date(),
+        query: req.query.query,
+        num_results: req.query.totalCount,
+        options: req.query.includePermissions,
+        info: "This search was performed using the SMAR tool: [URL]. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results",
+      };
+      const logInfo_arr = Object.entries(logInfo);
+      for (var i = 0; i < logInfo_arr.length; i++)
+      {
+        logInfo_arr[i] = logInfo_arr[i].join(': ');
+      }
+      const fileText = logInfo_arr.join('\n');
+      console.log(fileText);
+      const filename = "Reproducibility_Log_" + logInfo["query"];
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename}"`
+      );
+      res.setHeader("Content-Type", "text/plain");
+      res.send(fileText);
+    } catch (error) {
+      console.error("Error generating relog file:", error);
+      res.status(500).send("An error occurred while generating the relog.");
+    }
+  });
 };
 
 const downloadCSV = (req, res) => {
@@ -239,4 +315,5 @@ const downloadCSV = (req, res) => {
 module.exports = {
   search: searchController,
   downloadCSV,
+  downloadRelog,
 };
