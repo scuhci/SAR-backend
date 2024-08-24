@@ -234,11 +234,15 @@ const downloadRelog = (req, res) => {
       const logInfo = {
         version: json_raw.version,
         date_time: new Date(),
-        query: req.query.query,
+        store: "Google Play Store",
+        country: "US",
+        search_query: req.query.query,
         num_results: req.query.totalCount,
-        options: req.query.includePermissions,
-        info: "This search was performed using the SMAR tool: [URL]. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results",
+        permissions: req.query.includePermissions,
+        info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results",
       };
+      // Implement store and country when applicable
+      // Also, add additional options when applicable
       const logInfo_arr = Object.entries(logInfo);
       for (var i = 0; i < logInfo_arr.length; i++)
       {
