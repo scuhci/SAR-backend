@@ -1,7 +1,7 @@
 const express = require('express');
 const searchRoutes = require('./routes/searchRoutes');
 const permissionsRoute = require('./routes/permissionsRoute');
-const { downloadCSV } = require('./controllers/searchController');
+const { downloadRelog, downloadCSV } = require('./controllers/searchController');
 const { scrapeReviews } = require('./controllers/reviewsController'); 
 const path = require('path');
 const app = express();
@@ -14,6 +14,7 @@ app.use(express.static(buildpath));
 
 // API Endpoints
 app.use('/search', searchRoutes);
+app.get('/download-relog', downloadRelog);
 app.get('/download-csv', downloadCSV);
 app.use('/permissions', permissionsRoute);
 app.use('/reviews', scrapeReviews);
