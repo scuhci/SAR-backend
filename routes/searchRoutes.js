@@ -8,7 +8,8 @@ router.use(morgan('combined'));
 // Search endpoint
 router.get('/', searchController.search);
 
-// Endpoint to download CSV
+// Endpoint to download CSV & Relog
 router.get('/download-csv', searchController.downloadCSV);
+router.get('/download-relog', searchController.downloadRelog);
 
 module.exports = router;
