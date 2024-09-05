@@ -32,6 +32,8 @@ function jsonToCsv(jsonData, standardPermissionsList, includePermissions = false
 
   // Define columns to exclude
   const columnsToExclude = [
+    'userName',
+    'userImage',
     'comments',
     'descriptionHTML',
     'updated',
