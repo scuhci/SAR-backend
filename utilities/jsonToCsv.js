@@ -25,13 +25,65 @@ function cleanText(text) {
   return cleanedText;
 }
 
-function jsonToCsv(jsonData, standardPermissionsList, includePermissions = false) {
+function fixColumns(oldColumns, source)
+{
+  let columns = oldColumns;
+  // Change column names
+  if(source == 'app') // main CSV (a list of apps)
+  { 
+    console.log("Editing App CSV Column Headers");
+    columns = columns.map(column => column
+    .replace('title', 'appName')
+    .replace('summary', 'description')
+    .replace('score', 'avgRating')
+    .replace('source', 'scrapedFrom')
+    .replace('maxInstalls', 'approximateInstalls')
+    .replace('ratings', 'totalRatings')
+    .replace('reviews', 'totalReviews')
+    .replace('available', 'downloadable')
+    .replace('offersIAP', 'inAppPurchases')
+    .replace('IAPRange', 'inAppPurchasesPriceRange')
+    .replace('androidVersion', 'androidMinVersion')
+    .replace('privacyPolicy', 'privacyPolicyURL')
+    .replace('adSupported', 'inAppAdvertisements')
+    .replace('released', 'originalReleaseDate')
+    .replace('version', 'currentAppVersion')
+    .replace('recentChanges', 'currentVersionChanges'));
+  }
+  else // reviews CSV
+  {
+    console.log("Editing Reviews CSV Column Headers");
+    columns = columns.map(column => column
+    .replace('id', 'reviewID')
+    .replace('score', 'rating')
+    .replace('url', 'reviewURL')
+    .replace('text', 'reviewText')
+    .replace('replyDate', 'developerReplyDate')
+    .replace('replyText', 'developerReplyText')
+    .replace('version', 'versionWhenReviewed')
+    .replace('thumbsUp', 'helpfulVotes'));
+  }
+  return columns;
+}
+
+function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions = false) {
   const csvRows = [];
+  const currentTime = new Date();
 
   // console.log(jsonData);
 
+  // Extract column headers dynamically from the first object in jsonData
+  let columns = Object.keys(jsonData[0] || {});
+
+  // Adjust columns
   // Define columns to exclude
   const columnsToExclude = [
+    'free',
+    'scoreText',
+    'installs',
+    'androidMaxVersion',
+    'previewVideo',
+    'criterias',
     'userName',
     'userImage',
     'comments',
@@ -58,20 +110,21 @@ function jsonToCsv(jsonData, standardPermissionsList, includePermissions = false
     'permissions', //This is the permissions data structure, which has a child object that contains individual permissions and their labels 
     //individual permissions and labels are added separately
   ];
-
-  // Extract column headers dynamically from the first object in jsonData
-  let columns = Object.keys(jsonData[0] || {});
-
+  // for reviews, 'title' is removed, so we account for that here
+  if(source == 'reviews')
+  {
+    columnsToExclude.push('title');
+  }
   // Remove excluded columns
   columns = columns.filter(column => !columnsToExclude.includes(column));
-
+  columns.push('dateScraped'); // adding this to list the timestamp the data was scraped at
   // Add standard permissions columns if includePermissions is true
   if (includePermissions) {
     columns = [...columns, ...standardPermissionsList];
   }
 
-  // Create header row
-  csvRows.push(columns.map(column => `"${cleanText(column)}"`).join(','));
+  // Create header row (leaving for the end!)
+  // csvRows.push(columns.map(column => `"${cleanText(column)}"`).join(','));
 
   //Add data rows
   for (const row of jsonData) {
@@ -79,16 +132,34 @@ function jsonToCsv(jsonData, standardPermissionsList, includePermissions = false
     for (const column of columns) {
       if (column in row) {
         rowValues.push(`"${cleanText(row[column])}"`);
-      } else if (standardPermissionsList.includes(column)) {
+        if(rowValues[rowValues.length-1] == `"primary search"`)
+        {
+          rowValues.pop();
+          rowValues.push(`"keyword search"`);
+        }
+        else if(rowValues[rowValues.length-1] == `"related app"`)
+        {
+          rowValues.pop();
+          rowValues.push(`"similar app links"`);
+        }
+      } else if (source == 'app' && standardPermissionsList.includes(column)) {
         const permission = row.permissions.find(p => p.permission === column);
         rowValues.push(permission ? true : false);
-      } else {
+      }
+      else if (column == 'dateScraped')
+      {
+        rowValues.push(currentTime);
+      }
+      else {
         rowValues.push('');
       }
     }
     csvRows.push(rowValues.join(','));
   }
-
+  // editing column names 
+  columns = fixColumns(columns, source);
+  // adding them to the top of the CSV
+  csvRows.unshift(columns.map(column => `"${cleanText(column)}"`).join(','));
   return csvRows.join('\n');
 }
 

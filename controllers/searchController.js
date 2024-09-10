@@ -212,7 +212,8 @@ const searchController = async (req, res) => {
     for (const result of csvData) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-    node_ttl.push(query, csvData, null, 500);
+    node_ttl.push(query, csvData, null, 3600); // 60 seconds/min * 60 mins/hr -> download on backend for 1 hour
+    console.log("CSV stored on backend");
     return res.json({
       totalCount: uniqueResults.length,
       results: resultsToSend,
@@ -239,7 +240,7 @@ const downloadRelog = (req, res) => {
         search_query: req.query.query,
         num_results: req.query.totalCount,
         permissions: req.query.includePermissions,
-        info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results",
+        info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
       // Implement store and country when applicable
       // Also, add additional options when applicable
@@ -277,7 +278,7 @@ const downloadCSV = (req, res) => {
       const permissions = req.query.includePermissions === 'true';
       console.log("Query used for CSV: %s\n", query);
       var csvInfo = node_ttl.get(query);
-      const csv = jsonToCsv(csvInfo, standardPermissionsList, permissions);
+      const csv = jsonToCsv(csvInfo, 'app', standardPermissionsList, permissions);
       // Get the current timestamp in the desired format
       const timestamp = new Date().toLocaleString('en-US', {
         month: 'numeric',
