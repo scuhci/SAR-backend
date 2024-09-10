@@ -81,6 +81,7 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
     'free',
     'scoreText',
     'installs',
+    'genre',
     'androidMaxVersion',
     'previewVideo',
     'criterias',
