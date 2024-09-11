@@ -10,7 +10,7 @@ var node_ttl = new nodeTTL();
 const path = require("path");
 const file_name = path.basename(__filename);
 const cors = require("cors");
-const { globalAgent } = require("node:http");
+const { globalAgent } = require("node:https");
 const router = require("../routes/searchRoutes");
 
 let csvData;
