@@ -54,9 +54,14 @@ const searchController = async (req, res) => {
   try {
     // Search for the main query
     const mainResults = await search({ term: query });
-
-    // Secondary search for each primary result
     const relatedResults = [];
+    // if an appID is passed as the query
+    if (query.startsWith('com.'))
+    {
+      mainResults.splice(1,4); // this relies on the assumption that the first result will the be the app we're looking for
+    }
+    else {
+    // Secondary search for each primary result if required
     for (const mainResult of mainResults) {
       console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
       const relatedQuery = `related to ${mainResult.title}`;
@@ -64,6 +69,7 @@ const searchController = async (req, res) => {
 
       // Introduce a delay between requests (e.g., 1 second)
       await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
     }
 
     // Combine the main and secondary results
