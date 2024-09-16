@@ -55,6 +55,7 @@ function fixColumns(oldColumns, source)
     console.log("Editing Reviews CSV Column Headers");
     columns = columns.map(column => column
     .replace('id', 'reviewID')
+    .replace('date', 'dateReviewed')
     .replace('score', 'rating')
     .replace('url', 'reviewURL')
     .replace('text', 'reviewText')
