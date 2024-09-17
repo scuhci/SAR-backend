@@ -56,20 +56,23 @@ const searchController = async (req, res) => {
     const mainResults = await search({ term: query });
     const relatedResults = [];
     // if an appID is passed as the query
-    if (query.startsWith('com.'))
+    try 
     {
-      mainResults.splice(1,4); // this relies on the assumption that the first result will the be the app we're looking for
+      await app({appId: query}); // checking if our query is a valid app ID
+      console.log("App ID passed\n");
+      mainResults.splice(1,mainResults.length - 1); // this relies on the assumption that the first result will the be the app we're looking for
     }
-    else {
-    // Secondary search for each primary result if required
-    for (const mainResult of mainResults) {
-      console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
-      const relatedQuery = `related to ${mainResult.title}`;
-      relatedResults.push(await search({ term: relatedQuery }));
+    catch (error) {
+      // Secondary search for each primary result if required
+      console.log("App ID not passed\n");
+      for (const mainResult of mainResults) {
+        console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
+        const relatedQuery = `related to ${mainResult.title}`;
+        relatedResults.push(await search({ term: relatedQuery }));
 
-      // Introduce a delay between requests (e.g., 1 second)
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-    }
+        // Introduce a delay between requests (e.g., 1 second)
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
     }
 
     // Combine the main and secondary results
@@ -88,7 +91,7 @@ const searchController = async (req, res) => {
     for (const result of allResults) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-
+    console.log("All results fetched\n");
     // Fetch additional details (including genre) for each result
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
