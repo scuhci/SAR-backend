@@ -35,6 +35,8 @@ function jsonToCsv(jsonData, standardPermissionsList, includePermissions = false
     'screenshots',
     'ipadScreenshots',
     'appletvScreenshots',
+    'userName',
+    'userImage',
     'comments',
     'descriptionHTML',
     'updated',
