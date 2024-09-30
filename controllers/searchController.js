@@ -1,5 +1,5 @@
 const natural = require("natural");
-const { search, app } = require("app-store-scraper");
+const { search, app, similar } = require("app-store-scraper");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
@@ -59,19 +59,17 @@ const searchController = async (req, res) => {
     const relatedResults = [];
     for (const mainResult of mainResults) {
       console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
-      const relatedQuery = `related to ${mainResult.title}`;
-      relatedResults.push(await search({ term: relatedQuery }));
-
+      relatedResults.push(...await similar({appId:mainResult.appId}));
+      //const relatedQuery = `related to ${mainResult.title}`;
+      // relatedResults.push(await search({ term: relatedQuery }));
       // Introduce a delay between requests (e.g., 1 second)
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
-
+    console.log("[%s] # of Main Results: %d, # of Related Results: %d", file_name, mainResults.length, relatedResults.length);
     // Combine the main and secondary results
     const allResults = [
       ...mainResults.map((result) => ({ ...result, source: "primary search" })),
-      ...relatedResults.flatMap((results) =>
-        results.map((result) => ({ ...result, source: "related app" }))
-      ),
+      ...relatedResults.map((result) => ({ ...result, source: "related app" }))
     ];
 
     console.log(
@@ -233,7 +231,7 @@ const downloadRelog = (req, res) => {
       const logInfo = {
         version: json_raw.version,
         date_time: new Date(),
-        store: "Google Play Store",
+        store: "App Store",
         country: "US",
         search_query: req.query.query,
         num_results: req.query.totalCount,
