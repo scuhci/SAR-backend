@@ -212,7 +212,7 @@ const searchController = async (req, res) => {
     for (const result of csvData) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-    node_ttl.push(query, csvData, null, 3600); // 60 seconds/min * 60 mins/hr -> download on backend for 1 hour
+    node_ttl.push(query, csvData, null, 604800); // 1 week
     console.log("CSV stored on backend");
     return res.json({
       totalCount: uniqueResults.length,
