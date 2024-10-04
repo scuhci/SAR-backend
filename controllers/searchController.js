@@ -126,18 +126,12 @@ const searchController = async (req, res) => {
       calculateResultSimilarityScore
     );
 
-    // Limit the results with similarity score to the first 5 for the response
-    const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(
-      0,
-      5
-    );
-
     console.log(
       "[%s] [%d] results shown on SMAR Website:\n-------------------------\n",
       file_name,
-      limitedResultsWithSimilarityScore.length
+      resultsWithSimilarityScore.length
     );
-    for (const result of limitedResultsWithSimilarityScore) {
+    for (const result of resultsWithSimilarityScore) {
       console.log(
         "[%s] Title: %s, Similarity Score: %d\n",
         file_name,
@@ -146,12 +140,12 @@ const searchController = async (req, res) => {
       );
     }
 
-    if (limitedResultsWithSimilarityScore.length === 0) {
+    if (resultsWithSimilarityScore.length === 0) {
       throw new Error(`Search for '${query}' did not return any results.`);
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
-    const cleanedLimitedResults = limitedResultsWithSimilarityScore.map(
+    const cleanedLimitedResults = resultsWithSimilarityScore.map(
       (result) => {
         // Clean the summary column
         if (result.summary) {
@@ -174,11 +168,9 @@ const searchController = async (req, res) => {
       const permissionsResults = await permissionsController.fetchPermissions(
         uniqueResults
       );
-      // Slice the permissionsResults to include only the first 5 results
-      const limitedPermissionsResults = permissionsResults.slice(0, 5);
 
       // Process permissions data for the sliced 5 results
-      const processedPermissionsResults = limitedPermissionsResults.map(
+      const processedPermissionsResults = permissionsResults.map(
         (appInfo) => {
           const permissionsWithSettings = standardPermissionsList.map(
             (permission) => ({
