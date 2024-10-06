@@ -74,7 +74,7 @@ const scrapeReviews = async (req, res) => {
     res.set("Access-Control-Allow-Origin", "*");
 
     // Convert reviews data to CSV format
-    const csvData = jsonToCsv(reviews);
+    const csvData = jsonToCsv(reviews, 'reviews');
 
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
 

@@ -54,16 +54,25 @@ const searchController = async (req, res) => {
   try {
     // Search for the main query
     const mainResults = await search({ term: query });
-
-    // Secondary search for each primary result
     const relatedResults = [];
-    for (const mainResult of mainResults) {
-      console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
-      relatedResults.push(...await similar({appId:mainResult.appId}));
+    // if an appID is passed as the query
+    try 
+    {
+      await app({appId: query}); // checking if our query is a valid app ID
+      console.log("App ID passed\n");
+      mainResults.splice(1,mainResults.length - 1); // this relies on the assumption that the first result will the be the app we're looking for
+    }
+    catch (error) {
+      // Secondary search for each primary result if required
+      console.log("App ID not passed\n");
+      for (const mainResult of mainResults) {
+        console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
+        relatedResults.push(...await similar({appId:mainResult.appId}));
       //const relatedQuery = `related to ${mainResult.title}`;
-      // relatedResults.push(await search({ term: relatedQuery }));
-      // Introduce a delay between requests (e.g., 1 second)
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+        // relatedResults.push(await search({ term: relatedQuery }));
+        // Introduce a delay between requests (e.g., 1 second)
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
     }
     console.log("[%s] # of Main Results: %d, # of Related Results: %d", file_name, mainResults.length, relatedResults.length);
     // Combine the main and secondary results
@@ -80,7 +89,7 @@ const searchController = async (req, res) => {
     for (const result of allResults) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-
+    console.log("All results fetched\n");
     // Fetch additional details (including genre) for each result
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
@@ -209,7 +218,8 @@ const searchController = async (req, res) => {
     for (const result of csvData) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-    node_ttl.push(query, csvData, null, 500);
+    node_ttl.push(query, csvData, null, 604800); // 1 week
+    console.log("CSV stored on backend");
     return res.json({
       totalCount: uniqueResults.length,
       results: resultsToSend,
@@ -236,7 +246,7 @@ const downloadRelog = (req, res) => {
         search_query: req.query.query,
         num_results: req.query.totalCount,
         permissions: req.query.includePermissions,
-        info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results",
+        info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
       // Implement store and country when applicable
       // Also, add additional options when applicable
@@ -274,7 +284,7 @@ const downloadCSV = (req, res) => {
       const permissions = req.query.includePermissions === 'true';
       console.log("Query used for CSV: %s\n", query);
       var csvInfo = node_ttl.get(query);
-      const csv = jsonToCsv(csvInfo, standardPermissionsList, permissions);
+      const csv = jsonToCsv(csvInfo, 'app', standardPermissionsList, permissions);
       // Get the current timestamp in the desired format
       const timestamp = new Date().toLocaleString('en-US', {
         month: 'numeric',
