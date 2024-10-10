@@ -58,9 +58,9 @@ const searchController = async (req, res) => {
     // if an appID is passed as the query
     try 
     {
-      await app({appId: query}); // checking if our query is a valid app ID
+      const fetched_appID = await app({appId: query}); // checking if our query is a valid app ID
       console.log("App ID passed\n");
-      mainResults.splice(1,mainResults.length - 1); // this relies on the assumption that the first result will the be the app we're looking for
+      mainResults.splice(0,mainResults.length, fetched_appID);
     }
     catch (error) {
       // Secondary search for each primary result if required
