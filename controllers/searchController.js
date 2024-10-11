@@ -43,8 +43,8 @@ const searchController = async (req, res) => {
   const query = req.query.query;
   const permissions = req.query.includePermissions === "true";
   const countryCode = req.query.countryCode;
-  console.log("[%s] Query Passed: %s\n", file_name, query);
-  console.log("[%s] Country Code Passed: %s\n", file_name, countryCode);
+  // console.log("[%s] Query Passed: %s\n", file_name, query);
+  // console.log("[%s] Country Code Passed: %s\n", file_name, countryCode);
   res.set("Access-Control-Allow-Origin", "*");
 
   if (!query) {
@@ -68,9 +68,9 @@ const searchController = async (req, res) => {
 
     // Combine the main and secondary results
     const allResults = [
-      ...mainResults.map((result) => ({ ...result, source: "primary search" })),
+      ...mainResults.map((result) => ({ ...result, country: countryCode, source: "primary search" })),
       ...relatedResults.flatMap((results) =>
-        results.map((result) => ({ ...result, source: "related app" }))
+        results.map((result) => ({ ...result, country: countryCode, source: "related app" }))
       ),
     ];
 
