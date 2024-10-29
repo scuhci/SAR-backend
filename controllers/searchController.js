@@ -42,9 +42,9 @@ function calculateResultSimilarityScore(result) {
 const searchController = async (req, res) => {
   const query = req.query.query;
   const permissions = req.query.includePermissions === "true";
-  const countryCode = req.query.countryCode;
+  const country = req.query.countryCode;
   // console.log("[%s] Query Passed: %s\n", file_name, query);
-  // console.log("[%s] Country Code Passed: %s\n", file_name, countryCode);
+  // console.log("[%s] Country Code Passed: %s\n", file_name, country);
   res.set("Access-Control-Allow-Origin", "*");
 
   if (!query) {
@@ -54,13 +54,13 @@ const searchController = async (req, res) => {
 
   try {
     // Search for the main query
-    const mainResults = await search({ term: query, country: countryCode });
+    const mainResults = await search({ term: query, country: country });
     // Secondary search for each primary result
     const relatedResults = [];
     for (const mainResult of mainResults) {
-      console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
+      console.log("[%s] Main Title Fetched: %s %s\n", file_name, mainResult.title, country);
       const relatedQuery = `related to ${mainResult.title}`;
-      relatedResults.push(await search({ term: relatedQuery, country: countryCode }));
+      relatedResults.push(await search({ term: relatedQuery, country: country }));
 
       // Introduce a delay between requests (e.g., 1 second)
       await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -68,9 +68,9 @@ const searchController = async (req, res) => {
 
     // Combine the main and secondary results
     const allResults = [
-      ...mainResults.map((result) => ({ ...result, country: countryCode, source: "primary search" })),
+      ...mainResults.map((result) => ({ ...result, country: country, source: "primary search" })),
       ...relatedResults.flatMap((results) =>
-        results.map((result) => ({ ...result, country: countryCode, source: "related app" }))
+        results.map((result) => ({ ...result, country: country, source: "related app" }))
       ),
     ];
 
@@ -88,7 +88,7 @@ const searchController = async (req, res) => {
       allResults.map(async (appInfo) => {
         try {
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          const appDetails = await app({ appId: appInfo.appId, country: countryCode });
+          const appDetails = await app({ appId: appInfo.appId, country: country });
           return { ...appInfo, ...appDetails };
         } catch (error) {
           console.error("Error fetching app details:", error);
@@ -212,7 +212,7 @@ const searchController = async (req, res) => {
     for (const result of csvData) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-    const pushQuery = "c:"+countryCode+"_t:"+query+"_p:"+permissions; // new relog key since results are based on country + permissions + search query now
+    const pushQuery = "c:"+country+"_t:"+query+"_p:"+permissions; // new relog key since results are based on country + permissions + search query now
     // we want users to get the CSV results corresponding to their entire search, so an update was necessary
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
     console.log("CSV stored on backend");
@@ -278,8 +278,8 @@ const downloadCSV = (req, res) => {
       // Use the existing jsonToCsv method to convert JSON to CSV
       const query = req.query.query;
       const permissions = req.query.includePermissions === 'true';
-      const countryCode = req.query.countryCode;
-      const pushQuery = "c:"+countryCode+"_t:"+query+"_p:"+permissions; // to retrieve the csv information from node_ttl
+      const country = req.query.countryCode;
+      const pushQuery = "c:"+country+"_t:"+query+"_p:"+permissions; // to retrieve the csv information from node_ttl
       console.log("pushQuery used for CSV: %s\n", pushQuery);
       var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
       const csv = jsonToCsv(csvInfo, 'app', standardPermissionsList, permissions);
