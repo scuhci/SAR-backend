@@ -42,6 +42,7 @@ function calculateResultSimilarityScore(result) {
 const searchController = async (req, res) => {
   const query = req.query.query;
   const permissions = req.query.includePermissions === "true";
+
   console.log("[%s] Query Passed: %s\n", file_name, query);
 
   res.set("Access-Control-Allow-Origin", "*");
