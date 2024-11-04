@@ -10,7 +10,7 @@ var node_ttl = new nodeTTL();
 const path = require("path");
 const file_name = path.basename(__filename);
 const cors = require("cors");
-const { globalAgent } = require("node:http");
+const { globalAgent } = require("node:https");
 const router = require("../routes/searchRoutes");
 
 let csvData;
@@ -52,6 +52,7 @@ const searchController = async (req, res) => {
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
   try {
+
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
     // if an appID is passed as the query
@@ -101,7 +102,7 @@ const searchController = async (req, res) => {
     for (const result of allResults) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-
+    console.log("All results fetched\n");
     // Fetch additional details (including genre) for each result
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
@@ -148,18 +149,12 @@ const searchController = async (req, res) => {
       calculateResultSimilarityScore
     );
 
-    // Limit the results with similarity score to the first 5 for the response
-    const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(
-      0,
-      5
-    );
-
     console.log(
       "[%s] [%d] results shown on SMAR Website:\n-------------------------\n",
       file_name,
-      limitedResultsWithSimilarityScore.length
+      resultsWithSimilarityScore.length
     );
-    for (const result of limitedResultsWithSimilarityScore) {
+    for (const result of resultsWithSimilarityScore) {
       console.log(
         "[%s] Title: %s, Similarity Score: %d\n",
         file_name,
@@ -168,12 +163,12 @@ const searchController = async (req, res) => {
       );
     }
 
-    if (limitedResultsWithSimilarityScore.length === 0) {
+    if (resultsWithSimilarityScore.length === 0) {
       throw new Error(`Search for '${query}' did not return any results.`);
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
-    const cleanedLimitedResults = limitedResultsWithSimilarityScore.map(
+    const cleanedLimitedResults = resultsWithSimilarityScore.map(
       (result) => {
         // Clean the summary column
         if (result.summary) {
@@ -196,11 +191,9 @@ const searchController = async (req, res) => {
       const permissionsResults = await permissionsController.fetchPermissions(
         uniqueResults
       );
-      // Slice the permissionsResults to include only the first 5 results
-      const limitedPermissionsResults = permissionsResults.slice(0, 5);
 
       // Process permissions data for the sliced 5 results
-      const processedPermissionsResults = limitedPermissionsResults.map(
+      const processedPermissionsResults = permissionsResults.map(
         (appInfo) => {
           const permissionsWithSettings = standardPermissionsList.map(
             (permission) => ({
