@@ -2,23 +2,28 @@ const gplay = require("google-play-scraper");
 const {jsonToCsv} = require('../utilities/jsonToCsv');
 
 const MAX_APPS_COUNT = 1000000;
+const path = require("path");
+const file_name = path.basename(__filename);
 
-const fetchList = async (collection, category, fullDetail, num) => {
-    const options = {
-      collection: collection,
+const fetchList = async (collection, category, num) => {
+    options = {
       category: category,
-      num: num,
+      collection: collection,
       lang: 'en',
       country: 'us',
-      fullDetail: fullDetail,
+      num: num,
+      fullDetail: false,
     };
   
     try {
       let numAppsToFetch = num && num < MAX_APPS_COUNT ? num : MAX_APPS_COUNT;
-      console.log(`Fetching ${numAppsToFetch} Apps within ${collection} and ${category}` );
-  
-      toplist = await gplay.list(options);
-  
+
+      const toplist = await gplay.list(options);
+
+      for (const result of toplist) {
+        console.log(`[%s] App Title: %s\n`, file_name, result.title);
+      }
+
       if(toplist.length > numAppsToFetch) {
         toplist = toplist.slice(0, numAppsToFetch)
       }
@@ -31,35 +36,20 @@ const fetchList = async (collection, category, fullDetail, num) => {
   };
   
   const scrapeList = async (req, res) => {
+    console.log("Received Top List Scrape Request");
     const collection = req.query.collection;
     const category = req.query.category;
-    const num = req.query.num;
-    const fullDetail = req.query.fullDetail === 'true';
+    const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
   
     try {
       // Fetch top list based on the count or the maximum limit
-      const toplist = await fetchList(collection, category, fullDetail, num);
-      console.log(`Scraped top ${toplist.length} apps for ${collection} and ${category}`);
+      const toplist = await fetchList(collection, category, num);
+      console.log(`Scraped Top ${toplist.length} Apps for ${collection} and ${category}`);
   
-      console.log("Top 10 of list retrieved:");
-      for (let i = 0; i < Math.min(10, toplist.length); i++) {
-        console.log(JSON.stringify(toplist[i]));
-      }
-  
-      res.set("Access-Control-Allow-Origin", "*");
-  
-      // Convert top list data to CSV format
-      const csvData = jsonToCsv(toplist, 'toplist');
-  
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-  
-      // Set response headers for CSV download
-      res.setHeader('Content-Disposition', `attachment; filename="${collection}_${category}_toplist.csv"`);
-      res.setHeader('Content-Type', 'text/csv');
-  
-      // Send the CSV data as a response
-      res.status(200).send(csvData);
-  
+      return res.json({
+        totalCount: toplist.length,
+        results: toplist,
+      });
     } catch (error) {
       console.error("Error getting top list:", error);
       res.status(500).json({ error: "An error occurred while getting top list." });
