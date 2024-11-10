@@ -42,27 +42,25 @@ function calculateResultSimilarityScore(result) {
 const searchController = async (req, res) => {
   const query = req.query.query;
   const permissions = req.query.includePermissions === "true";
-  console.log("[%s] Query Passed: %s\n", file_name, query);
-
+  const country = req.query.countryCode;
+  // console.log("[%s] Query Passed: %s\n", file_name, query);
+  // console.log("[%s] Country Code Passed: %s\n", file_name, country);
   res.set("Access-Control-Allow-Origin", "*");
 
   if (!query) {
     console.error("Missing search query");
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
-
   try {
-    // Search for the main query
-    const mainResults = await search({ term: query });
+
+    const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
     // if an appID is passed as the query
-    try 
-    {
-      const fetched_appID = await app({appId: query}); // checking if our query is a valid app ID
+    try {
+      const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
       console.log("App ID passed\n");
-      mainResults.splice(0,mainResults.length, fetched_appID);
-    }
-    catch (error) {
+      mainResults.splice(0, mainResults.length, fetched_appID);
+    } catch (error) {
       // Secondary search for each primary result if required
       console.log("App ID not passed\n");
       for (const mainResult of mainResults) {
@@ -74,11 +72,20 @@ const searchController = async (req, res) => {
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     }
-    console.log("[%s] # of Main Results: %d, # of Related Results: %d", file_name, mainResults.length, relatedResults.length);
     // Combine the main and secondary results
     const allResults = [
-      ...mainResults.map((result) => ({ ...result, source: "primary search" })),
-      ...relatedResults.map((result) => ({ ...result, source: "related app" }))
+      ...mainResults.map((result) => ({
+        ...result,
+        country: country,
+        source: "primary search",
+      })),
+      ...relatedResults.flatMap((results) =>
+        results.map((result) => ({
+          ...result,
+          country: country,
+          source: "related app",
+        }))
+      ),
     ];
 
     console.log(
@@ -95,7 +102,10 @@ const searchController = async (req, res) => {
       allResults.map(async (appInfo) => {
         try {
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          const appDetails = await app({ appId: appInfo.appId });
+          const appDetails = await app({
+            appId: appInfo.appId,
+            country: country,
+          });
           return { ...appInfo, ...appDetails };
         } catch (error) {
           console.error("Error fetching app details:", error);
@@ -133,18 +143,12 @@ const searchController = async (req, res) => {
       calculateResultSimilarityScore
     );
 
-    // Limit the results with similarity score to the first 5 for the response
-    const limitedResultsWithSimilarityScore = resultsWithSimilarityScore.slice(
-      0,
-      5
-    );
-
     console.log(
       "[%s] [%d] results shown on SMAR Website:\n-------------------------\n",
       file_name,
-      limitedResultsWithSimilarityScore.length
+      resultsWithSimilarityScore.length
     );
-    for (const result of limitedResultsWithSimilarityScore) {
+    for (const result of resultsWithSimilarityScore) {
       console.log(
         "[%s] Title: %s, Similarity Score: %d\n",
         file_name,
@@ -153,7 +157,7 @@ const searchController = async (req, res) => {
       );
     }
 
-    if (limitedResultsWithSimilarityScore.length === 0) {
+    if (resultsWithSimilarityScore.length === 0) {
       throw new Error(`Search for '${query}' did not return any results.`);
     }
 
@@ -180,11 +184,9 @@ const searchController = async (req, res) => {
       const permissionsResults = await permissionsController.fetchPermissions(
         uniqueResults
       );
-      // Slice the permissionsResults to include only the first 5 results
-      const limitedPermissionsResults = permissionsResults.slice(0, 5);
 
       // Process permissions data for the sliced 5 results
-      const processedPermissionsResults = limitedPermissionsResults.map(
+      const processedPermissionsResults = permissionsResults.map(
         (appInfo) => {
           const permissionsWithSettings = standardPermissionsList.map(
             (permission) => ({
@@ -218,7 +220,9 @@ const searchController = async (req, res) => {
     for (const result of csvData) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-    node_ttl.push(query, csvData, null, 604800); // 1 week
+    const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // new relog key since results are based on country + permissions + search query now
+    // we want users to get the CSV results corresponding to their entire search, so an update was necessary
+    node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
     console.log("CSV stored on backend");
     return res.json({
       totalCount: uniqueResults.length,
@@ -241,8 +245,8 @@ const downloadRelog = (req, res) => {
       const logInfo = {
         version: json_raw.version,
         date_time: new Date(),
-        store: "App Store",
-        country: "US",
+        store: "Apple iOS Store",
+        country: req.query.countryCode,
         search_query: req.query.query,
         num_results: req.query.totalCount,
         permissions: req.query.includePermissions,
@@ -251,11 +255,10 @@ const downloadRelog = (req, res) => {
       // Implement store and country when applicable
       // Also, add additional options when applicable
       const logInfo_arr = Object.entries(logInfo);
-      for (var i = 0; i < logInfo_arr.length; i++)
-      {
-        logInfo_arr[i] = logInfo_arr[i].join(': ');
+      for (var i = 0; i < logInfo_arr.length; i++) {
+        logInfo_arr[i] = logInfo_arr[i].join(": ");
       }
-      const fileText = logInfo_arr.join('\n');
+      const fileText = logInfo_arr.join("\n");
       console.log(fileText);
       const filename = "Reproducibility_Log_" + logInfo["query"];
       res.setHeader(
@@ -281,23 +284,34 @@ const downloadCSV = (req, res) => {
     try {
       // Use the existing jsonToCsv method to convert JSON to CSV
       const query = req.query.query;
-      const permissions = req.query.includePermissions === 'true';
-      console.log("Query used for CSV: %s\n", query);
-      var csvInfo = node_ttl.get(query);
-      const csv = jsonToCsv(csvInfo, 'app', standardPermissionsList, permissions);
+      const permissions = req.query.includePermissions === "true";
+      const country = req.query.countryCode;
+      const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // to retrieve the csv information from node_ttl
+      console.log("pushQuery used for CSV: %s\n", pushQuery);
+      var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
+      const csv = jsonToCsv(
+        csvInfo,
+        "app",
+        standardPermissionsList,
+        permissions
+      );
       // Get the current timestamp in the desired format
-      const timestamp = new Date().toLocaleString('en-US', {
-        month: 'numeric',
-        day: 'numeric',
-        year: 'numeric',
-        hour: 'numeric',
-        minute: 'numeric',
+      const timestamp = new Date().toLocaleString("en-US", {
+        month: "numeric",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "numeric",
         hour12: true,
       });
 
       // Extract date and time components and remove spaces
-      const dateComponents = timestamp.split('/').map(component => component.trim());
-      const timeComponents = dateComponents[2].split(',').map(component => component.trim());
+      const dateComponents = timestamp
+        .split("/")
+        .map((component) => component.trim());
+      const timeComponents = dateComponents[2]
+        .split(",")
+        .map((component) => component.trim());
 
       // Format the timestamp without spaces
       const formattedTimestamp = `${dateComponents[0]}${dateComponents[1]}${timeComponents[0]}`;
@@ -305,8 +319,8 @@ const downloadCSV = (req, res) => {
       // Suggest a filename to the browser
       const suggestedFilename = `${query}_${formattedTimestamp}.csv`;
 
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-      
+      res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+
       // Set response headers for CSV download
       res.setHeader(
         "Content-Disposition",

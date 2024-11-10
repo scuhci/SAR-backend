@@ -3,12 +3,12 @@ const {jsonToCsv} = require('../utilities/jsonToCsv');
 
 const MAX_REVIEWS_COUNT = 100000; //Fixed value for now, can be updated for future development
 
-const fetchReviews = async (appId, reviewsCount) => {
+const fetchReviews = async (appId, reviewsCount, countryCode) => {
   const options = {
     appId: appId,
     sort: iosStore.sort.RECENT,
-    country: 'us',
     page: 1,
+    country: countryCode,
   };
 
   try {
@@ -44,7 +44,12 @@ const fetchReviews = async (appId, reviewsCount) => {
 };
 
 const scrapeReviews = async (req, res) => {
-  const { appId } = req.query;
+  // console.log(req);
+  // console.log("\n");
+  const appId = req.query.appId;
+  const countryCode = req.query.countryCode;
+  // console.log("AppID: %s\n", appId);
+  // console.log("CountryCode: %s\n", countryCode);
 
   try {
     // Get the actual count of reviews
@@ -54,7 +59,7 @@ const scrapeReviews = async (req, res) => {
     console.log(`App ${appId} contains ${reviewsCount} reviews`);
 
     // Fetch reviews based on the count or the maximum limit
-    const reviews = await fetchReviews(appId, reviewsCount);
+    const reviews = await fetchReviews(appId, reviewsCount, countryCode);
     console.log(`Received ${reviews.length} reviews for app: ${appId}`);
 
     console.log("First 10 reviews:");
@@ -63,9 +68,11 @@ const scrapeReviews = async (req, res) => {
     }
 
     res.set("Access-Control-Allow-Origin", "*");
+    const country_reviews = [
+      ...reviews.map((review) => ({ ...review, country: countryCode}))];
 
     // Convert reviews data to CSV format
-    const csvData = jsonToCsv(reviews, 'reviews');
+    const csvData = jsonToCsv(country_reviews, 'reviews');
 
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
 
