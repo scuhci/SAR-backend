@@ -1,7 +1,7 @@
 const iosStore = require("app-store-scraper");
 const {jsonToCsv} = require('../utilities/jsonToCsv');
 
-const MAX_REVIEWS_COUNT = 100000; //Fixed value for now, can be updated for future development
+const MAX_REVIEWS_COUNT = 500; //Fixed value for now, can be updated for future development
 
 const fetchReviews = async (appId, reviewsCount, countryCode) => {
   const options = {
@@ -13,23 +13,17 @@ const fetchReviews = async (appId, reviewsCount, countryCode) => {
 
   try {
     let reviews = [];
-    let nextToken;
     let totalFetched = 0;
     let numReviews = reviewsCount && reviewsCount < MAX_REVIEWS_COUNT ? reviewsCount : MAX_REVIEWS_COUNT;
     console.log(`Fetching ${numReviews} Reviews for AppId: ${appId}`);
 
-    while (totalFetched < numReviews && options.page < 10) {
-      if (nextToken) {
-        options.page = options.page + 1; // We can only scrape up to page 10, so we stop incrementing before we reach that point
-        nextToken = false;
-      }
+    while (totalFetched < numReviews && options.page < 11) {
+      console.log(`Fetching page ${options.page} of reviews\n`);
       const result = await iosStore.reviews(options);
       reviews = reviews.concat(result);
       totalFetched = reviews.length;
       console.log(`Total reviews fetched so far: ${totalFetched}`);
-      if(totalFetched % 50 === 0) {
-        nextToken = true;
-      }
+      options.page = options.page + 1; // We can only scrape up to page 10, so we stop incrementing before we reach that point
     }
 
     if(reviews.length > numReviews){
@@ -53,7 +47,7 @@ const scrapeReviews = async (req, res) => {
 
   try {
     // Get the actual count of reviews
-    const appDetails = await iosStore.app({ appId: appId });
+    const appDetails = await iosStore.app({ appId: appId, country: countryCode });
     const reviewsCount = appDetails.reviews;
 
     console.log(`App ${appId} contains ${reviewsCount} reviews`);

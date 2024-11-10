@@ -52,10 +52,9 @@ const searchController = async (req, res) => {
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
   try {
-
+    // if an appID is passed as the query
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
-    // if an appID is passed as the query
     try {
       const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
       console.log("App ID passed\n");
@@ -65,13 +64,20 @@ const searchController = async (req, res) => {
       console.log("App ID not passed\n");
       for (const mainResult of mainResults) {
         console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
-        relatedResults.push(...await similar({appId:mainResult.appId}));
-      //const relatedQuery = `related to ${mainResult.title}`;
+        try {
+          relatedResults.push(...await similar({appId: mainResult.appId}));
+        }
+        catch {
+          console.log(`Unable to fetch app details for appID: ${mainResult.appId}`);
+        }
+        //const relatedQuery = `related to ${mainResult.title}`;
         // relatedResults.push(await search({ term: relatedQuery }));
         // Introduce a delay between requests (e.g., 1 second)
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     }
+
+
     // Combine the main and secondary results
     const allResults = [
       ...mainResults.map((result) => ({
@@ -79,13 +85,11 @@ const searchController = async (req, res) => {
         country: country,
         source: "primary search",
       })),
-      ...relatedResults.flatMap((results) =>
-        results.map((result) => ({
+      ...relatedResults.map((result) => ({
           ...result,
           country: country,
           source: "related app",
-        }))
-      ),
+        })),
     ];
 
     console.log(
@@ -162,7 +166,7 @@ const searchController = async (req, res) => {
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
-    const cleanedLimitedResults = limitedResultsWithSimilarityScore.map((result) => {
+    const cleanedLimitedResults = resultsWithSimilarityScore.map((result) => {
       // Clean the summary column
       if (result.description) {
         result.description = cleanText(result.description);

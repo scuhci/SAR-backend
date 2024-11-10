@@ -166,8 +166,6 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
   columns = fixColumns(columns, source);
   // adding them to the top of the CSV
   csvRows.unshift(columns.map(column => `"${cleanText(column)}"`).join(','));
-  // to force UTF-8, we add a BOM to the top of the CSV as well (https://en.wikipedia.org/wiki/Byte_order_mark)
-  csvRows.unshift('\xEF\xBB\xBF')
   return csvRows.join('\n');
 }
 
