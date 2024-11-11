@@ -52,7 +52,6 @@ const searchController = async (req, res) => {
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
   try {
-
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
     // if an appID is passed as the query
@@ -70,10 +69,13 @@ const searchController = async (req, res) => {
           mainResult.title
         );
         const relatedQuery = `related to ${mainResult.title}`;
-        relatedResults.push(
-          await search({ term: relatedQuery, country: country })
-        );
-
+        try {
+          relatedResults.push(
+            await search({ term: relatedQuery, country: country })
+          );
+        } catch {
+          console.log(`Unable to fetch app details for appID: ${mainResult.appId}`);
+        }
         // Introduce a delay between requests (e.g., 1 second)
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
@@ -168,21 +170,19 @@ const searchController = async (req, res) => {
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
-    const cleanedLimitedResults = resultsWithSimilarityScore.map(
-      (result) => {
-        // Clean the summary column
-        if (result.summary) {
-          result.summary = cleanText(result.summary);
-        }
-
-        // Clean the recentChanges column
-        if (result.recentChanges) {
-          result.recentChanges = cleanText(result.recentChanges);
-        }
-
-        return result;
+    const cleanedLimitedResults = resultsWithSimilarityScore.map((result) => {
+      // Clean the summary column
+      if (result.summary) {
+        result.summary = cleanText(result.summary);
       }
-    );
+
+      // Clean the recentChanges column
+      if (result.recentChanges) {
+        result.recentChanges = cleanText(result.recentChanges);
+      }
+
+      return result;
+    });
 
     // Check if includePermissions is true
     if (permissions) {
@@ -193,24 +193,22 @@ const searchController = async (req, res) => {
       );
 
       // Process permissions data for the sliced 5 results
-      const processedPermissionsResults = permissionsResults.map(
-        (appInfo) => {
-          const permissionsWithSettings = standardPermissionsList.map(
-            (permission) => ({
-              permission: permission,
-              // type: permission.type,
-              isPermissionRequired: appInfo.permissions.some(
-                (appPermission) => appPermission.permission === permission
-              )
-                ? true
-                : false,
-            })
-          );
+      const processedPermissionsResults = permissionsResults.map((appInfo) => {
+        const permissionsWithSettings = standardPermissionsList.map(
+          (permission) => ({
+            permission: permission,
+            // type: permission.type,
+            isPermissionRequired: appInfo.permissions.some(
+              (appPermission) => appPermission.permission === permission
+            )
+              ? true
+              : false,
+          })
+        );
 
-          // Return appInfo with permissions
-          return { ...appInfo, permissions: permissionsWithSettings };
-        }
-      );
+        // Return appInfo with permissions
+        return { ...appInfo, permissions: permissionsWithSettings };
+      });
 
       resultsToSend = processedPermissionsResults;
       csvData = permissionsResults;
@@ -325,8 +323,8 @@ const downloadCSV = (req, res) => {
 
       // Suggest a filename to the browser
       const suggestedFilename = `${query}_${formattedTimestamp}.csv`;
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-      
+      res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+
       res.setHeader("Content-Type", ["text/csv", "charset=utf-8"]);
 
       // Set response headers for CSV download
