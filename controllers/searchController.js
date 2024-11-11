@@ -1,8 +1,6 @@
 const natural = require("natural");
 const { search, app, similar } = require("app-store-scraper");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
-const permissionsController = require("./permissionsController");
-const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
 var node_ttl = new nodeTTL();
@@ -41,7 +39,6 @@ function calculateResultSimilarityScore(result) {
 
 const searchController = async (req, res) => {
   const query = req.query.query;
-  const permissions = req.query.includePermissions === "true";
   const country = req.query.countryCode;
   // console.log("[%s] Query Passed: %s\n", file_name, query);
   // console.log("[%s] Country Code Passed: %s\n", file_name, country);
@@ -181,40 +178,8 @@ const searchController = async (req, res) => {
       }
     );
 
-    // Check if includePermissions is true
-    if (permissions) {
-      // If includePermissions is true, call the fetchPermissions function
-      console.log("Calling fetchPermissions method");
-      const permissionsResults = await permissionsController.fetchPermissions(
-        uniqueResults
-      );
-
-      // Process permissions data for the sliced 5 results
-      const processedPermissionsResults = permissionsResults.map(
-        (appInfo) => {
-          const permissionsWithSettings = standardPermissionsList.map(
-            (permission) => ({
-              permission: permission,
-              // type: permission.type,
-              isPermissionRequired: appInfo.permissions.some(
-                (appPermission) => appPermission.permission === permission
-              )
-                ? true
-                : false,
-            })
-          );
-
-          // Return appInfo with permissions
-          return { ...appInfo, permissions: permissionsWithSettings };
-        }
-      );
-
-      resultsToSend = processedPermissionsResults;
-      csvData = permissionsResults;
-    } else {
-      resultsToSend = cleanedLimitedResults;
-      csvData = uniqueResults;
-    }
+    resultsToSend = cleanedLimitedResults;
+    csvData = uniqueResults;
 
     console.log(
       "[%s] [%d] entries to be forwarded to CSV:\n-------------------------\n",
@@ -224,7 +189,7 @@ const searchController = async (req, res) => {
     for (const result of csvData) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-    const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // new relog key since results are based on country + permissions + search query now
+    const pushQuery = "c:" + country + "_t:" + query; // new relog key since results are based on country + search query now
     // we want users to get the CSV results corresponding to their entire search, so an update was necessary
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
     console.log("CSV stored on backend");
@@ -253,7 +218,6 @@ const downloadRelog = (req, res) => {
         country: req.query.countryCode,
         search_query: req.query.query,
         num_results: req.query.totalCount,
-        permissions: req.query.includePermissions,
         info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
       // Implement store and country when applicable
@@ -288,16 +252,13 @@ const downloadCSV = (req, res) => {
     try {
       // Use the existing jsonToCsv method to convert JSON to CSV
       const query = req.query.query;
-      const permissions = req.query.includePermissions === "true";
       const country = req.query.countryCode;
-      const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // to retrieve the csv information from node_ttl
+      const pushQuery = "c:" + country + "_t:" + query; // to retrieve the csv information from node_ttl
       console.log("pushQuery used for CSV: %s\n", pushQuery);
       var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
       const csv = jsonToCsv(
         csvInfo,
-        "app",
-        standardPermissionsList,
-        permissions
+        "app"
       );
       // Get the current timestamp in the desired format
       const timestamp = new Date().toLocaleString("en-US", {

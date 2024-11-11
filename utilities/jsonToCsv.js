@@ -68,7 +68,7 @@ function fixColumns(oldColumns, source)
   return columns;
 }
 
-function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions = false) {
+function jsonToCsv(jsonData, source) {
   const csvRows = [];
   const currentTime = new Date();
 
@@ -113,8 +113,6 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
     'earlyAccessEnabled',
     'isAvailableInPlayPass',
     'similarityScore',
-    'permissions', //This is the permissions data structure, which has a child object that contains individual permissions and their labels 
-    //individual permissions and labels are added separately
   ];
   // for reviews, 'title' is removed, so we account for that here
   if(source == 'reviews')
@@ -124,10 +122,6 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
   // Remove excluded columns
   columns = columns.filter(column => !columnsToExclude.includes(column));
   columns.push('dateScraped'); // adding this to list the timestamp the data was scraped at
-  // Add standard permissions columns if includePermissions is true
-  if (includePermissions) {
-    columns = [...columns, ...standardPermissionsList];
-  }
 
   // Create header row (leaving for the end!)
   // csvRows.push(columns.map(column => `"${cleanText(column)}"`).join(','));
@@ -148,9 +142,6 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
           rowValues.pop();
           rowValues.push(`"similar app links"`);
         }
-      } else if (source == 'app' && standardPermissionsList.includes(column)) {
-        const permission = row.permissions.find(p => p.permission === column);
-        rowValues.push(permission ? true : false);
       }
       else if (column == 'dateScraped')
       {
