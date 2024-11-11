@@ -65,7 +65,7 @@ const searchController = async (req, res) => {
           relatedResults.push(...await similar({appId: mainResult.appId}));
         }
         catch {
-          console.log(`Unable to fetch app details for appID: ${mainResult.appId}`);
+          console.error(`Unable to fetch app details for appID: ${mainResult.appId}`);
         }
         //const relatedQuery = `related to ${mainResult.title}`;
         // relatedResults.push(await search({ term: relatedQuery }));
