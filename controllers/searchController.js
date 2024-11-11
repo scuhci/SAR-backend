@@ -74,7 +74,7 @@ const searchController = async (req, res) => {
             await search({ term: relatedQuery, country: country })
           );
         } catch {
-          console.log(`Unable to fetch app details for appID: ${mainResult.appId}`);
+          console.error(`Unable to fetch app details for appID: ${mainResult.appId}`);
         }
         // Introduce a delay between requests (e.g., 1 second)
         await new Promise((resolve) => setTimeout(resolve, 3000));
