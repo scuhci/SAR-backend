@@ -325,15 +325,15 @@ const downloadCSV = (req, res) => {
 
       // Suggest a filename to the browser
       const suggestedFilename = `${query}_${formattedTimestamp}.csv`;
-
-      res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+      
+      res.setHeader("Content-Type", ["text/csv", "charset=utf-8"]);
 
       // Set response headers for CSV download
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${suggestedFilename}"`
+        `attachment; filename="${encodeURI(suggestedFilename)}"`
       );
-      res.setHeader("Content-Type", "text/csv");
 
       // Send the CSV data as a response
       res.status(200).send(csv);
