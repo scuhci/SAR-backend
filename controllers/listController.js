@@ -5,19 +5,19 @@ const MAX_APPS_COUNT = 1000000;
 const path = require("path");
 const file_name = path.basename(__filename);
 
-const fetchList = async (collection, category, num) => {
+const fetchList = async (collection, category, num, country) => {
     options = {
       category: category,
       collection: collection,
       lang: 'en',
-      country: 'us',
+      country: country,
       num: num,
-      fullDetail: false,
+      fullDetail: true,
     };
   
     try {
       let numAppsToFetch = num && num < MAX_APPS_COUNT ? num : MAX_APPS_COUNT;
-
+      console.log(options);
       const toplist = await gplay.list(options);
 
       for (const result of toplist) {
@@ -39,11 +39,12 @@ const fetchList = async (collection, category, num) => {
     console.log("Received Top List Scrape Request");
     const collection = req.query.collection;
     const category = req.query.category;
+    const country = req.query.country;
     const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
   
     try {
       // Fetch top list based on the count or the maximum limit
-      const toplist = await fetchList(collection, category, num);
+      const toplist = await fetchList(collection, category, num, country);
       console.log(`Scraped Top ${toplist.length} Apps for ${collection} and ${category}`);
   
       return res.json({
