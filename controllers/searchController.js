@@ -214,7 +214,7 @@ const downloadRelog = (req, res) => {
       const logInfo = {
         version: json_raw.version,
         date_time: new Date(),
-        store: "Apple iOS Store",
+        store: req.query.store,
         country: req.query.countryCode,
         search_query: req.query.query,
         num_results: req.query.totalCount,
