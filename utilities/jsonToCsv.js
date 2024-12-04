@@ -48,7 +48,16 @@ function fixColumns(oldColumns, source)
     .replace('adSupported', 'inAppAdvertisements')
     .replace('released', 'originalReleaseDate')
     .replace('version', 'currentAppVersion')
-    .replace('recentChanges', 'currentVersionChanges'));
+    .replace('recentChanges', 'currentVersionChanges')
+    .replace('size', 'appSizeInBytes')
+    .replace('screenshots', 'appScreenshots')
+    .replace('ipadScreenshots', 'appIpadScreenshots')
+    .replace('appletvScreenshots', 'appletvScreenshots')
+    .replace('languages', 'supportedLanguages')
+    .replace('currentVersionScore', 'currentVersionAvgRating')
+    .replace('supportedDevices', 'supportedDeviceList')
+    .replace('developerUrl', 'developerAppStorePageURL')
+    .replace('genreIds', 'genreIDs'));
   }
   else // reviews CSV
   {
@@ -87,9 +96,6 @@ function jsonToCsv(jsonData, source) {
     'androidMaxVersion',
     'previewVideo',
     'criterias',
-    'screenshots',
-    'ipadScreenshots',
-    'appletvScreenshots',
     'userName',
     'userImage',
     'comments',
