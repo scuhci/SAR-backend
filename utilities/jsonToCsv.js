@@ -57,6 +57,7 @@ function fixColumns(oldColumns, source)
     .replace('currentVersionScore', 'currentVersionAvgRating')
     .replace('supportedDevices', 'supportedDeviceList')
     .replace('developerUrl', 'developerAppStorePageURL')
+    .replace('updated', 'lastUpdated')
     .replace('genreIds', 'genreIDs'));
   }
   else // reviews CSV
@@ -64,14 +65,11 @@ function fixColumns(oldColumns, source)
     console.log("Editing Reviews CSV Column Headers");
     columns = columns.map(column => column
     .replace('id', 'reviewID')
-    .replace('date', 'dateReviewed')
+    .replace('updated', 'dateReviewed')
     .replace('score', 'rating')
     .replace('url', 'reviewURL')
     .replace('text', 'reviewText')
-    .replace('replyDate', 'developerReplyDate')
-    .replace('replyText', 'developerReplyText')
     .replace('version', 'versionWhenReviewed')
-    .replace('thumbsUp', 'helpfulVotes')
     .replace('dateReviewedScraped', 'dateScraped'));
   }
   return columns;
@@ -100,11 +98,9 @@ function jsonToCsv(jsonData, source) {
     'userImage',
     'comments',
     'descriptionHTML',
-    'updated',
     'contentRatingDescription',
     'videoImage',
     'video',
-    'screenshots',
     'headerImage',
     'familyGenreID',
     'familyGenre',
@@ -119,6 +115,7 @@ function jsonToCsv(jsonData, source) {
     'earlyAccessEnabled',
     'isAvailableInPlayPass',
     'similarityScore',
+    'userURL',
   ];
   // for reviews, 'title' is removed, so we account for that here
   if(source == 'reviews')
