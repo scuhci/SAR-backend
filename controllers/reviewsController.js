@@ -1,45 +1,29 @@
-const gplay = require("google-play-scraper");
+const iosStore = require("app-store-scraper");
 const {jsonToCsv} = require('../utilities/jsonToCsv');
 
-const MAX_REVIEWS_COUNT = 100000; //Fixed value for now, can be updated for future development
+const MAX_REVIEWS_COUNT = 500; //Fixed value for now, can be updated for future development
 
 const fetchReviews = async (appId, reviewsCount, countryCode) => {
   const options = {
     appId: appId,
-    sort: gplay.sort.NEWEST,
-    lang: 'en',
-    country: countryCode
+    sort: iosStore.sort.RECENT,
+    page: 1,
+    country: countryCode,
   };
 
   try {
     let reviews = [];
-    let nextToken;
     let totalFetched = 0;
     let numReviews = reviewsCount && reviewsCount < MAX_REVIEWS_COUNT ? reviewsCount : MAX_REVIEWS_COUNT;
     console.log(`Fetching ${numReviews} Reviews for AppId: ${appId}`);
 
-    while (totalFetched < numReviews) {
-      if (nextToken) {
-        options.nextPaginationToken = nextToken;
-      }
-
-      const result = await gplay.reviews(options);
-      const newData = result.data || [];
-
-      // Process each review to include the criteria section
-      const processedReviews = newData.map(review => {
-        const criterias = review.criterias || []; // Get criterias section
-        const criteriaData = criterias.map(criteria => `criteria: ${criteria.criteria}: rating: ${criteria.rating}`).join('; '); // Convert criterias to string
-        return {
-          ...review,
-          criterias: criteriaData 
-        };
-      });
-
-      reviews = reviews.concat(processedReviews);
-      totalFetched += newData.length;
+    while (totalFetched < numReviews && options.page < 11) {
+      console.log(`Fetching page ${options.page} of reviews\n`);
+      const result = await iosStore.reviews(options);
+      reviews = reviews.concat(result);
+      totalFetched = reviews.length;
       console.log(`Total reviews fetched so far: ${totalFetched}`);
-      nextToken = result.nextPaginationToken;
+      options.page = options.page + 1; // We can only scrape up to page 10, so we stop incrementing before we reach that point
     }
 
     if(reviews.length > numReviews){
@@ -63,7 +47,7 @@ const scrapeReviews = async (req, res) => {
 
   try {
     // Get the actual count of reviews
-    const appDetails = await gplay.app({ appId: appId, country: countryCode });
+    const appDetails = await iosStore.app({ appId: appId, country: countryCode });
     const reviewsCount = appDetails.reviews;
 
     console.log(`App ${appId} contains ${reviewsCount} reviews`);

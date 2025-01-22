@@ -48,27 +48,34 @@ function fixColumns(oldColumns, source)
     .replace('adSupported', 'inAppAdvertisements')
     .replace('released', 'originalReleaseDate')
     .replace('version', 'currentAppVersion')
-    .replace('recentChanges', 'currentVersionChanges'));
+    .replace('recentChanges', 'currentVersionChanges')
+    .replace('size', 'appSizeInBytes')
+    .replace('screenshots', 'appScreenshots')
+    .replace('ipadScreenshots', 'appIpadScreenshots')
+    .replace('appletvScreenshots', 'appletvScreenshots')
+    .replace('languages', 'supportedLanguages')
+    .replace('currentVersionScore', 'currentVersionAvgRating')
+    .replace('supportedDevices', 'supportedDeviceList')
+    .replace('developerUrl', 'developerAppStorePageURL')
+    .replace('updated', 'lastUpdated')
+    .replace('genreIds', 'genreIDs'));
   }
   else // reviews CSV
   {
     console.log("Editing Reviews CSV Column Headers");
     columns = columns.map(column => column
     .replace('id', 'reviewID')
-    .replace('date', 'dateReviewed')
+    .replace('updated', 'dateReviewed')
     .replace('score', 'rating')
     .replace('url', 'reviewURL')
     .replace('text', 'reviewText')
-    .replace('replyDate', 'developerReplyDate')
-    .replace('replyText', 'developerReplyText')
     .replace('version', 'versionWhenReviewed')
-    .replace('thumbsUp', 'helpfulVotes')
     .replace('dateReviewedScraped', 'dateScraped'));
   }
   return columns;
 }
 
-function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions = false) {
+function jsonToCsv(jsonData, source) {
   const csvRows = [];
   const currentTime = new Date();
 
@@ -91,16 +98,14 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
     'userImage',
     'comments',
     'descriptionHTML',
-    'updated',
     'contentRatingDescription',
     'videoImage',
     'video',
-    'screenshots',
     'headerImage',
     'familyGenreID',
     'familyGenre',
     'developerInternalID',
-    'androidVersionText',
+    'requiredOsVersionText',
     'histogram',
     'minInstalls',
     'priceText',
@@ -110,8 +115,7 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
     'earlyAccessEnabled',
     'isAvailableInPlayPass',
     'similarityScore',
-    'permissions', //This is the permissions data structure, which has a child object that contains individual permissions and their labels 
-    //individual permissions and labels are added separately
+    'userURL',
   ];
   // for reviews, 'title' is removed, so we account for that here
   if(source == 'reviews')
@@ -121,10 +125,6 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
   // Remove excluded columns
   columns = columns.filter(column => !columnsToExclude.includes(column));
   columns.push('dateScraped'); // adding this to list the timestamp the data was scraped at
-  // Add standard permissions columns if includePermissions is true
-  if (includePermissions) {
-    columns = [...columns, ...standardPermissionsList];
-  }
 
   // Create header row (leaving for the end!)
   // csvRows.push(columns.map(column => `"${cleanText(column)}"`).join(','));
@@ -145,9 +145,6 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
           rowValues.pop();
           rowValues.push(`"similar app links"`);
         }
-      } else if (source == 'app' && standardPermissionsList.includes(column)) {
-        const permission = row.permissions.find(p => p.permission === column);
-        rowValues.push(permission ? true : false);
       }
       else if (column == 'dateScraped')
       {

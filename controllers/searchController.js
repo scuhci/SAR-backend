@@ -1,8 +1,6 @@
 const natural = require("natural");
-const { search, app } = require("google-play-scraper");
+const { search, app, similar } = require("app-store-scraper");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
-const permissionsController = require("./permissionsController");
-const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
 var node_ttl = new nodeTTL();
@@ -41,7 +39,7 @@ function calculateResultSimilarityScore(result) {
 
 const searchController = async (req, res) => {
   const query = req.query.query;
-  const permissions = req.query.includePermissions === "true";
+
   const country = req.query.countryCode;
   // console.log("[%s] Query Passed: %s\n", file_name, query);
   // console.log("[%s] Country Code Passed: %s\n", file_name, country);
@@ -52,10 +50,9 @@ const searchController = async (req, res) => {
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
   try {
-
+    // if an appID is passed as the query
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
-    // if an appID is passed as the query
     try {
       const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
       console.log("App ID passed\n");
@@ -64,20 +61,22 @@ const searchController = async (req, res) => {
       // Secondary search for each primary result if required
       console.log("App ID not passed\n");
       for (const mainResult of mainResults) {
-        console.log(
-          "[%s] Main Title Fetched: %s\n",
-          file_name,
-          mainResult.title
-        );
-        const relatedQuery = `related to ${mainResult.title}`;
-        relatedResults.push(
-          await search({ term: relatedQuery, country: country })
-        );
+
+        console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
+        try {
+          relatedResults.push(...await similar({appId: mainResult.appId}));
+        }
+        catch {
+          console.error(`Unable to fetch app details for appID: ${mainResult.appId}`);
+        }
+        //const relatedQuery = `related to ${mainResult.title}`;
+        // relatedResults.push(await search({ term: relatedQuery }));
 
         // Introduce a delay between requests (e.g., 1 second)
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     }
+
     // Combine the main and secondary results
     const allResults = [
       ...mainResults.map((result) => ({
@@ -85,13 +84,11 @@ const searchController = async (req, res) => {
         country: country,
         source: "primary search",
       })),
-      ...relatedResults.flatMap((results) =>
-        results.map((result) => ({
+      ...relatedResults.map((result) => ({
           ...result,
           country: country,
           source: "related app",
-        }))
-      ),
+        })),
     ];
 
     console.log(
@@ -168,12 +165,11 @@ const searchController = async (req, res) => {
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
-    const cleanedLimitedResults = resultsWithSimilarityScore.map(
-      (result) => {
-        // Clean the summary column
-        if (result.summary) {
-          result.summary = cleanText(result.summary);
-        }
+    const cleanedLimitedResults = resultsWithSimilarityScore.map((result) => {
+      // Clean the summary column
+      if (result.description) {
+        result.description = cleanText(result.description);
+      }
 
         // Clean the recentChanges column
         if (result.recentChanges) {
@@ -184,40 +180,8 @@ const searchController = async (req, res) => {
       }
     );
 
-    // Check if includePermissions is true
-    if (permissions) {
-      // If includePermissions is true, call the fetchPermissions function
-      console.log("Calling fetchPermissions method");
-      const permissionsResults = await permissionsController.fetchPermissions(
-        uniqueResults
-      );
-
-      // Process permissions data for the sliced 5 results
-      const processedPermissionsResults = permissionsResults.map(
-        (appInfo) => {
-          const permissionsWithSettings = standardPermissionsList.map(
-            (permission) => ({
-              permission: permission,
-              // type: permission.type,
-              isPermissionRequired: appInfo.permissions.some(
-                (appPermission) => appPermission.permission === permission
-              )
-                ? true
-                : false,
-            })
-          );
-
-          // Return appInfo with permissions
-          return { ...appInfo, permissions: permissionsWithSettings };
-        }
-      );
-
-      resultsToSend = processedPermissionsResults;
-      csvData = permissionsResults;
-    } else {
-      resultsToSend = cleanedLimitedResults;
-      csvData = uniqueResults;
-    }
+    resultsToSend = cleanedLimitedResults;
+    csvData = uniqueResults;
 
     console.log(
       "[%s] [%d] entries to be forwarded to CSV:\n-------------------------\n",
@@ -227,7 +191,7 @@ const searchController = async (req, res) => {
     for (const result of csvData) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-    const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // new relog key since results are based on country + permissions + search query now
+    const pushQuery = "c:" + country + "_t:" + query; // new relog key since results are based on country + search query now
     // we want users to get the CSV results corresponding to their entire search, so an update was necessary
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
     console.log("CSV stored on backend");
@@ -252,11 +216,11 @@ const downloadRelog = (req, res) => {
       const logInfo = {
         version: json_raw.version,
         date_time: new Date(),
-        store: "Google Play Store",
+        store: req.query.store,
+
         country: req.query.countryCode,
         search_query: req.query.query,
         num_results: req.query.totalCount,
-        permissions: req.query.includePermissions,
         info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
       // Implement store and country when applicable
@@ -291,16 +255,14 @@ const downloadCSV = (req, res) => {
     try {
       // Use the existing jsonToCsv method to convert JSON to CSV
       const query = req.query.query;
-      const permissions = req.query.includePermissions === "true";
       const country = req.query.countryCode;
-      const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // to retrieve the csv information from node_ttl
+      const pushQuery = "c:" + country + "_t:" + query; // to retrieve the csv information from node_ttl
       console.log("pushQuery used for CSV: %s\n", pushQuery);
       var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
       const csv = jsonToCsv(
         csvInfo,
-        "app",
-        standardPermissionsList,
-        permissions
+        "app"
+
       );
       // Get the current timestamp in the desired format
       const timestamp = new Date().toLocaleString("en-US", {
@@ -325,10 +287,11 @@ const downloadCSV = (req, res) => {
 
       // Suggest a filename to the browser
       const suggestedFilename = `${query}_${formattedTimestamp}.csv`;
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-      
-      res.setHeader("Content-Type", ["text/csv", "charset=utf-8"]);
 
+      res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+
+      // Set response headers for CSV download
+      res.setHeader("Content-Type", ["text/csv", "charset=utf-8"]);
       // Set response headers for CSV download
       res.setHeader(
         "Content-Disposition",
