@@ -39,6 +39,7 @@ function calculateResultSimilarityScore(result) {
 
 const searchController = async (req, res) => {
   const query = req.query.query;
+
   const country = req.query.countryCode;
   // console.log("[%s] Query Passed: %s\n", file_name, query);
   // console.log("[%s] Country Code Passed: %s\n", file_name, country);
@@ -60,6 +61,7 @@ const searchController = async (req, res) => {
       // Secondary search for each primary result if required
       console.log("App ID not passed\n");
       for (const mainResult of mainResults) {
+
         console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
         try {
           relatedResults.push(...await similar({appId: mainResult.appId}));
@@ -69,11 +71,11 @@ const searchController = async (req, res) => {
         }
         //const relatedQuery = `related to ${mainResult.title}`;
         // relatedResults.push(await search({ term: relatedQuery }));
+
         // Introduce a delay between requests (e.g., 1 second)
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     }
-
 
     // Combine the main and secondary results
     const allResults = [
@@ -215,6 +217,7 @@ const downloadRelog = (req, res) => {
         version: json_raw.version,
         date_time: new Date(),
         store: req.query.store,
+
         country: req.query.countryCode,
         search_query: req.query.query,
         num_results: req.query.totalCount,
@@ -259,6 +262,7 @@ const downloadCSV = (req, res) => {
       const csv = jsonToCsv(
         csvInfo,
         "app"
+
       );
       // Get the current timestamp in the desired format
       const timestamp = new Date().toLocaleString("en-US", {
