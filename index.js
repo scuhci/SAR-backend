@@ -4,7 +4,7 @@ const { downloadRelog, downloadCSV } = require('./controllers/searchController')
 const { scrapeReviews } = require('./controllers/reviewsController'); 
 const path = require('path');
 const app = express();
-const port = 5001;
+const port = 5002;
 
 // change for deployment
 const _dirname = path.dirname("");
