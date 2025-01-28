@@ -43,10 +43,11 @@ const fetchList = async (collection, category, num, country) => {
     console.log("Received Top List Scrape Request");
     const collection = req.query.collection;
     const category = Number(req.query.category);
+    const categoryName = req.query.categoryName;
     const country = req.query.country;
     const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
     const permissions = false;
-    const query = collection.concat(category, country);
+    const query = collection.concat(categoryName, country);
   
     try {
       // Fetch top list based on the count or the maximum limit
@@ -127,8 +128,9 @@ const fetchList = async (collection, category, num, country) => {
         const logInfo = {
           version: json_raw.version,
           date_time: new Date(),
-          store: "Google Play Store",
+          store: "App Store",
           country: req.query.country,
+          device: req.query.device,
           collection: req.query.collection,
           category: req.query.category,
           num_results: req.query.totalCount,
@@ -171,7 +173,7 @@ const fetchList = async (collection, category, num, country) => {
         const permissions = req.query.includePermissions === 'true';
         console.log("Query used for CSV: %s\n", query);
         var csvInfo = node_ttl.get(query);
-        const csv = jsonToCsv(csvInfo, 'app', standardPermissionsList, permissions);
+        const csv = jsonToCsv(csvInfo, 'app');
         // Get the current timestamp in the desired format
         const timestamp = new Date().toLocaleString('en-US', {
           month: 'numeric',
