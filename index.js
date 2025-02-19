@@ -3,6 +3,8 @@ const searchRoutes = require('./routes/searchRoutes');
 const permissionsRoute = require('./routes/permissionsRoute');
 const { downloadRelog, downloadCSV } = require('./controllers/searchController');
 const { scrapeReviews } = require('./controllers/reviewsController'); 
+const { downloadTopChartsCSV, downloadTopChartsRelog, scrapeList } = require('./controllers/listController');
+
 const path = require('path');
 const app = express();
 const port = 5001;
@@ -18,6 +20,9 @@ app.get('/download-relog', downloadRelog);
 app.get('/download-csv', downloadCSV);
 app.use('/permissions', permissionsRoute);
 app.use('/reviews', scrapeReviews);
+app.use('/toplists', scrapeList);
+app.use('/download-top-relog', downloadTopChartsRelog);
+app.use('/download-top-csv', downloadTopChartsCSV);
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
