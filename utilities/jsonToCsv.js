@@ -62,7 +62,8 @@ function fixColumns(oldColumns, source)
     .replace('replyDate', 'developerReplyDate')
     .replace('replyText', 'developerReplyText')
     .replace('version', 'versionWhenReviewed')
-    .replace('thumbsUp', 'helpfulVotes'));
+    .replace('thumbsUp', 'helpfulVotes')
+    .replace('dateReviewedScraped', 'dateScraped'));
   }
   return columns;
 }
