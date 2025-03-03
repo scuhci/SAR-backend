@@ -8,7 +8,6 @@ var node_ttl = new nodeTTL();
 const MAX_REVIEWS_COUNT = 500; //Fixed value for now, can be updated for future development
 
 const downloadReviewsRelog = (req, res) => {
-  console.log("wow!\n");
   cors()(req, res, () => {
     try {
       const logInfo = {
