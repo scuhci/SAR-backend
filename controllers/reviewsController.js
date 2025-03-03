@@ -1,11 +1,12 @@
 const iosStore = require("app-store-scraper");
+const iosReviews = require('app-store-scraper-reviews');
 const { jsonToCsv } = require("../utilities/jsonToCsv");
 const cors = require("cors");
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
 var node_ttl = new nodeTTL();
 
-const MAX_REVIEWS_COUNT = 500; //Fixed value for now, can be updated for future development
+const MAX_REVIEWS_COUNT = 100000; //Fixed value for now, can be updated for future development
 
 const downloadReviewsRelog = (req, res) => {
   cors()(req, res, () => {
@@ -44,14 +45,12 @@ const downloadReviewsRelog = (req, res) => {
   });
 };
 
-const fetchReviews = async (appId, reviewsCount, countryCode) => {
+const fetchReviews = async (appId, appName, reviewsCount, countryCode) => {
   const options = {
-    appId: appId,
-    sort: iosStore.sort.RECENT,
-    page: 1,
     country: countryCode,
+    appId: appId,
+    appName: appName,
   };
-
   try {
     let reviews = [];
     let totalFetched = 0;
@@ -61,19 +60,16 @@ const fetchReviews = async (appId, reviewsCount, countryCode) => {
         : MAX_REVIEWS_COUNT;
     console.log(`Fetching ${numReviews} Reviews for AppId: ${appId}`);
 
-    while (totalFetched < numReviews && options.page < 11) {
-      console.log(`Fetching page ${options.page} of reviews\n`);
-      const result = await iosStore.reviews(options);
+    while (totalFetched < numReviews) {
+      const result = await iosReviews.getReviews(options);
       reviews = reviews.concat(result);
       totalFetched = reviews.length;
       console.log(`Total reviews fetched so far: ${totalFetched}`);
-      options.page = options.page + 1; // We can only scrape up to page 10, so we stop incrementing before we reach that point
     }
 
     if (reviews.length > numReviews) {
       reviews = reviews.slice(0, numReviews);
     }
-
     return reviews;
   } catch (error) {
     console.error("Error scraping reviews:", error);
@@ -100,9 +96,10 @@ const scrapeReviews = async (req, res) => {
     console.log(`App ${appId} contains ${reviewsCount} reviews`);
     const pushQuery = "c:" + countryCode + "_a:" + appId;
     node_ttl.push(pushQuery, reviewsCount, null, 604800); // 1 week
-
+    const appName = appDetails.title;
+    const id = appDetails.id;
     // Fetch reviews based on the count or the maximum limit
-    const reviews = await fetchReviews(appId, reviewsCount, countryCode);
+    const reviews = await fetchReviews(id, appName.replaceAll(" ", "-").toLowerCase(), reviewsCount, countryCode);
     console.log(`Received ${reviews.length} reviews for app: ${appId}`);
 
     console.log("First 10 reviews:");
@@ -114,7 +111,7 @@ const scrapeReviews = async (req, res) => {
     const country_reviews = [
       ...reviews.map((review) => ({ ...review, country: countryCode })),
     ];
-
+    
     // Convert reviews data to CSV format
     const csvData = jsonToCsv(country_reviews, "reviews");
 
