@@ -6,7 +6,7 @@ const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
 var node_ttl = new nodeTTL();
 
-const MAX_REVIEWS_COUNT = 100000; //Fixed value for now, can be updated for future development
+const MAX_REVIEWS_COUNT = 50000; //Fixed value for now, can be updated for future development
 
 const downloadReviewsRelog = (req, res) => {
   cors()(req, res, () => {
@@ -59,12 +59,16 @@ const fetchReviews = async (appId, appName, reviewsCount, countryCode) => {
         ? reviewsCount
         : MAX_REVIEWS_COUNT;
     console.log(`Fetching ${numReviews} Reviews for AppId: ${appId}`);
-
+    let previousAmountFetched = -1000; // to check if we're actually scraping reviews...
     while (totalFetched < numReviews) {
       const result = await iosReviews.getReviews(options);
       reviews = reviews.concat(result);
       totalFetched = reviews.length;
       console.log(`Total reviews fetched so far: ${totalFetched}`);
+      if (totalFetched == previousAmountFetched) {
+        throw new Error("Not able to scrape all reviews.");
+      }
+      previousAmountFetched = totalFetched;
     }
 
     if (reviews.length > numReviews) {
@@ -99,7 +103,7 @@ const scrapeReviews = async (req, res) => {
     const appName = appDetails.title;
     const id = appDetails.id;
     // Fetch reviews based on the count or the maximum limit
-    const reviews = await fetchReviews(id, appName.replaceAll(" ", "-").toLowerCase(), reviewsCount, countryCode);
+    const reviews = await fetchReviews(id, appName.replace(/[^0-9a-z]/gi, ' ').replace(/\s+/g, "-").toLowerCase(), reviewsCount, countryCode);
     console.log(`Received ${reviews.length} reviews for app: ${appId}`);
 
     console.log("First 10 reviews:");
