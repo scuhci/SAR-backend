@@ -8,6 +8,13 @@ var node_ttl = new nodeTTL();
 
 const MAX_REVIEWS_COUNT = 50000; //Fixed value for now, can be updated for future development
 
+function removeCharFromString(str, char) {
+  if (str.length > 0 && str.charAt(str.length - 1) === char) {
+    return str.slice(0, -1);
+  }
+  return str;
+}
+
 const downloadReviewsRelog = (req, res) => {
   cors()(req, res, () => {
     try {
@@ -65,7 +72,7 @@ const fetchReviews = async (appId, appName, reviewsCount, countryCode) => {
       reviews = reviews.concat(result);
       totalFetched = reviews.length;
       console.log(`Total reviews fetched so far: ${totalFetched}`);
-      if (totalFetched == previousAmountFetched) {
+      if (totalFetched === previousAmountFetched) {
         throw new Error("Not able to scrape all reviews.");
       }
       previousAmountFetched = totalFetched;
@@ -103,7 +110,7 @@ const scrapeReviews = async (req, res) => {
     const appName = appDetails.title;
     const id = appDetails.id;
     // Fetch reviews based on the count or the maximum limit
-    const reviews = await fetchReviews(id, appName.replace(/[^0-9a-z]/gi, ' ').replace(/\s+/g, "-").toLowerCase(), reviewsCount, countryCode);
+    const reviews = await fetchReviews(id, removeCharFromString(appName.replace(/[^0-9a-z]/gi, ' ').replace(/\s+/g, "-").toLowerCase(), "-"), reviewsCount, countryCode);
     console.log(`Received ${reviews.length} reviews for app: ${appId}`);
 
     console.log("First 10 reviews:");
