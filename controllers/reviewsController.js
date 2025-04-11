@@ -15,6 +15,11 @@ const fetchReviews = async (appId, reviewsCount, countryCode) => {
         let reviews = [];
         let nextToken;
         let totalFetched = 0;
+
+        if (reviewsCount === undefined) {
+            throw new Error('"reviewsCount is undefined :(" - Jeshwin');
+        }
+
         let numReviews = reviewsCount < MAX_REVIEWS_COUNT ? reviewsCount : MAX_REVIEWS_COUNT;
         console.log(`Fetching ${numReviews} Reviews for AppId: ${appId}`);
 
