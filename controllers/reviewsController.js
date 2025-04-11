@@ -3,12 +3,12 @@ const { jsonToCsv } = require("../utilities/jsonToCsv");
 
 const MAX_REVIEWS_COUNT = 100000; //Fixed value for now, can be updated for future development
 
-const fetchReviews = async (appId, reviewsCount, countryCode) => {
+const fetchReviews = async (appId, reviewsCount, countryCode, sort) => {
     const options = {
         appId: appId,
-        sort: gplay.sort.NEWEST,
         lang: "en",
         country: countryCode,
+        sort: sort == "Recency" ? gplay.sort.NEWEST : sort == "Rating" ? gplay.sort.RATING : gplay.sort.HELPFULNESS,
     };
 
     try {
@@ -65,6 +65,7 @@ const scrapeReviews = async (req, res) => {
     // console.log("\n");
     const appId = req.query.appId;
     const countryCode = req.query.countryCode;
+    const sortBy = req.query.sortBy;
     // console.log("AppID: %s\n", appId);
     // console.log("CountryCode: %s\n", countryCode);
 
@@ -76,7 +77,7 @@ const scrapeReviews = async (req, res) => {
         console.log(`App ${appId} contains ${reviewsCount} reviews`);
 
         // Fetch reviews based on the count or the maximum limit
-        const reviews = await fetchReviews(appId, reviewsCount, countryCode);
+        const reviews = await fetchReviews(appId, reviewsCount, countryCode, sortBy);
         console.log(`Received ${reviews.length} reviews for app: ${appId}`);
 
         console.log("First 10 reviews:");
