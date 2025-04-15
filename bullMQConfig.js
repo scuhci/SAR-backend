@@ -35,7 +35,7 @@ const cacheService = {
 
 module.exports = {
     queues,
-    schedulers,
     cacheService,
     redisClient,
+    redisConnection,
 };

@@ -8,9 +8,10 @@ const json_raw = require("../package.json");
 const path = require("path");
 const file_name = path.basename(__filename);
 const cors = require("cors");
+const { Worker } = require("bullmq");
+const { cacheService, queues, redisConnection } = require("../bullMQConfig");
 
 let csvData;
-let globalQuery;
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -30,180 +31,215 @@ function calculateSimilarityScore(query, result) {
 }
 
 // Calculate similarity score and add it to the result object
-function calculateResultSimilarityScore(result) {
-    result.similarityScore = calculateSimilarityScore(globalQuery, result.title);
+function calculateResultSimilarityScore(result, query) {
+    result.similarityScore = calculateSimilarityScore(query, result.title);
     return result;
 }
 
-const searchController = async (req, res) => {
+const newSearchController = async (req, res) => {
     const query = req.query.query;
     const permissions = req.query.includePermissions === "true";
     const country = req.query.countryCode;
 
-    res.set("Access-Control-Allow-Origin", "*");
-
+    // Check there is a query
     if (!query) {
         console.error("Missing search query");
         return res.status(400).json({ error: "Search query is missing.\n" });
     }
 
-    try {
-        const mainResults = await search({ term: query, country: country });
-        const relatedResults = [];
-        // if an appID is passed as the query
-        try {
-            const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
-            console.log("App ID passed\n");
-            mainResults.splice(0, mainResults.length, fetched_appID);
-        } catch (error) {
-            // Secondary search for each primary result if required
-            console.log("App ID not passed\n");
-            for (const mainResult of mainResults) {
-                console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
-                const relatedQuery = `related to ${mainResult.title}`;
-                relatedResults.push(await search({ term: relatedQuery, country: country }));
+    const cacheKey = `play:search:${country}:${query}:${permissions}`;
 
-                // Introduce a delay between requests (e.g., 1 second)
-                await new Promise((resolve) => setTimeout(resolve, 3000));
+    // Add job to the queue
+    const job = await queues.search.add(cacheKey, {
+        query: query,
+        permissions: permissions,
+        country: country,
+    });
+
+    // Return job ID to client
+    res.json({
+        status: "processing",
+        jobId: job.id,
+        message: "Your search is being processed. Use the job ID to check status.",
+    });
+};
+
+// The number of concurrent workers
+const WORKER_COUNT = 4;
+
+const searchWorkers = [];
+
+// Create multiple workers processing the same queue
+for (let i = 0; i < WORKER_COUNT; i++) {
+    const worker = new Worker(
+        "search-queue",
+        async (job) => {
+            const { query, permissions, country } = job.data;
+
+            // Generate cache key
+            const cacheKey = `play:search:${country}:${query}:${permissions}`;
+            console.log(`Checking cache for ${cacheKey}...`);
+
+            // Check if result exists in cache
+            const cachedResult = await cacheService.get(cacheKey);
+            if (cachedResult) {
+                console.log("Cache hit!");
+                return {
+                    totalCount: cachedResult.length,
+                    results: cachedResult,
+                };
             }
-        }
-        // Combine the main and secondary results
-        const allResults = [
-            ...mainResults.map((result) => ({
-                ...result,
-                country: country,
-                source: "primary search",
-            })),
-            ...relatedResults.flatMap((results) =>
-                results.map((result) => ({
+
+            const mainResults = await search({ term: query, country: country });
+            const relatedResults = [];
+
+            // if an appID is passed as the query
+            try {
+                const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
+                console.log("App ID passed\n");
+                mainResults.splice(0, mainResults.length, fetched_appID);
+            } catch (error) {
+                // Secondary search for each primary result if required
+                console.log("App ID not passed\n");
+                for (const mainResult of mainResults) {
+                    console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
+                    const relatedQuery = `related to ${mainResult.title}`;
+                    relatedResults.push(await search({ term: relatedQuery, country: country }));
+
+                    // Introduce a delay between requests (e.g., 1 second)
+                    await new Promise((resolve) => setTimeout(resolve, 3000));
+                }
+            }
+
+            // Combine the main and secondary results
+            const allResults = [
+                ...mainResults.map((result) => ({
                     ...result,
                     country: country,
-                    source: "related app",
-                }))
-            ),
-        ];
-
-        console.log("[%s] [%d] allResults:\n-------------------------\n", file_name, allResults.length);
-        for (const result of allResults) {
-            console.log("[%s] %s\n", file_name, result.title);
-        }
-        console.log("All results fetched\n");
-        // Fetch additional details (including genre) for each result
-        const detailedResults = await Promise.all(
-            allResults.map(async (appInfo) => {
-                try {
-                    await new Promise((resolve) => setTimeout(resolve, 2000));
-                    const appDetails = await app({
-                        appId: appInfo.appId,
+                    source: "primary search",
+                })),
+                ...relatedResults.flatMap((results) =>
+                    results.map((result) => ({
+                        ...result,
                         country: country,
-                    });
-                    return { ...appInfo, ...appDetails };
-                } catch (error) {
-                    console.error("Error fetching app details:", error);
-                    return null;
-                }
-            })
-        );
+                        source: "related app",
+                    }))
+                ),
+            ];
 
-        // Filter out apps with missing details
-        const validResults = detailedResults.filter((appInfo) => appInfo !== null);
+            // Fetch additional details (including genre) for each result
+            const detailedResults = await Promise.all(
+                allResults.map(async (appInfo) => {
+                    try {
+                        await new Promise((resolve) => setTimeout(resolve, 2000));
+                        const appDetails = await app({
+                            appId: appInfo.appId,
+                            country: country,
+                        });
+                        return { ...appInfo, ...appDetails };
+                    } catch (error) {
+                        console.error("Error fetching app details:", error);
+                        return null;
+                    }
+                })
+            );
 
-        console.log("[%s] [%d] validResults:\n-------------------------\n", file_name, validResults.length);
-        for (const result of validResults) {
-            console.log("[%s] %s\n", file_name, result.title);
-        }
+            // Filter out apps with missing details
+            const validResults = detailedResults.filter((appInfo) => appInfo !== null);
 
-        // Remove duplicates based on appId
-        const uniqueResults = Array.from(new Set(validResults.map((appInfo) => appInfo.appId))).map((appId) => {
-            return validResults.find((appInfo) => appInfo.appId === appId);
-        });
-
-        if (uniqueResults.length === 0) {
-            throw new Error(`Search for '${query}' did not return any results.`);
-        }
-
-        // Calculate similarity score for all unique results
-        globalQuery = query;
-        const resultsWithSimilarityScore = uniqueResults.map(calculateResultSimilarityScore);
-
-        console.log(
-            "[%s] [%d] results shown on SMAR Website:\n-------------------------\n",
-            file_name,
-            resultsWithSimilarityScore.length
-        );
-        for (const result of resultsWithSimilarityScore) {
-            console.log("[%s] Title: %s, Similarity Score: %d\n", file_name, result.title, result.similarityScore);
-        }
-
-        if (resultsWithSimilarityScore.length === 0) {
-            throw new Error(`Search for '${query}' did not return any results.`);
-        }
-
-        // Apply cleanText to the summary and recentChanges properties of each result
-        const cleanedLimitedResults = resultsWithSimilarityScore.map((result) => {
-            // Clean the summary column
-            if (result.summary) {
-                result.summary = cleanText(result.summary);
-            }
-
-            // Clean the recentChanges column
-            if (result.recentChanges) {
-                result.recentChanges = cleanText(result.recentChanges);
-            }
-
-            return result;
-        });
-
-        // Check if includePermissions is true
-        if (permissions) {
-            // If includePermissions is true, call the fetchPermissions function
-            console.log("Calling fetchPermissions method");
-            const permissionsResults = await permissionsController.fetchPermissions(uniqueResults);
-
-            // Process permissions data for the sliced 5 results
-            const processedPermissionsResults = permissionsResults.map((appInfo) => {
-                const permissionsWithSettings = standardPermissionsList.map((permission) => ({
-                    permission: permission,
-                    // type: permission.type,
-                    isPermissionRequired: appInfo.permissions.some(
-                        (appPermission) => appPermission.permission === permission
-                    )
-                        ? true
-                        : false,
-                }));
-
-                // Return appInfo with permissions
-                return { ...appInfo, permissions: permissionsWithSettings };
+            // Remove duplicates based on appId
+            const uniqueResults = Array.from(new Set(validResults.map((appInfo) => appInfo.appId))).map((appId) => {
+                return validResults.find((appInfo) => appInfo.appId === appId);
             });
 
-            resultsToSend = processedPermissionsResults;
-            csvData = permissionsResults;
-        } else {
-            resultsToSend = cleanedLimitedResults;
-            csvData = uniqueResults;
-        }
+            if (uniqueResults.length === 0) {
+                throw new Error(`Search for '${query}' did not return any results.`, { status: 500 });
+            }
 
-        console.log(
-            "[%s] [%d] entries to be forwarded to CSV:\n-------------------------\n",
-            file_name,
-            csvData.length
-        );
-        for (const result of csvData) {
-            console.log("[%s] %s\n", file_name, result.title);
+            // Calculate similarity score for all unique results
+            const resultsWithSimilarityScore = uniqueResults.map((result) =>
+                calculateResultSimilarityScore(result, query)
+            );
+
+            if (resultsWithSimilarityScore.length === 0) {
+                throw new Error(`Search for '${query}' did not return any results.`, { status: 500 });
+            }
+
+            // Apply cleanText to the summary and recentChanges properties of each result
+            const cleanedLimitedResults = resultsWithSimilarityScore.map((result) => {
+                // Clean the summary column
+                if (result.summary) {
+                    result.summary = cleanText(result.summary);
+                }
+
+                // Clean the recentChanges column
+                if (result.recentChanges) {
+                    result.recentChanges = cleanText(result.recentChanges);
+                }
+
+                return result;
+            });
+
+            // Check if includePermissions is true
+            if (permissions) {
+                // If includePermissions is true, call the fetchPermissions function
+                console.log("Calling fetchPermissions method");
+                const permissionsResults = await permissionsController.fetchPermissions(uniqueResults);
+
+                // Process permissions data for the sliced 5 results
+                const processedPermissionsResults = permissionsResults.map((appInfo) => {
+                    const permissionsWithSettings = standardPermissionsList.map((permission) => ({
+                        permission: permission,
+                        // type: permission.type,
+                        isPermissionRequired: appInfo.permissions.some(
+                            (appPermission) => appPermission.permission === permission
+                        )
+                            ? true
+                            : false,
+                    }));
+
+                    // Return appInfo with permissions
+                    return { ...appInfo, permissions: permissionsWithSettings };
+                });
+
+                resultsToSend = processedPermissionsResults;
+                csvData = permissionsResults;
+            } else {
+                resultsToSend = cleanedLimitedResults;
+                csvData = uniqueResults;
+            }
+
+            // Return the result
+            return {
+                totalCount: uniqueResults.length,
+                results: resultsToSend,
+            };
+        },
+        {
+            connection: redisConnection,
+            name: `search-worker-${i}`,
+            limiter: {
+                max: 20,
+                duration: 60000,
+            },
         }
-        const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // new relog key since results are based on country + permissions + search query now
-        // we want users to get the CSV results corresponding to their entire search, so an update was necessary
-        node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
-        console.log("CSV stored on backend");
-        return res.json({
-            totalCount: uniqueResults.length,
-            results: resultsToSend,
-        });
-    } catch (error) {
-        console.error("Error occurred during search:", error);
-        return res.status(500).json({ error: "An error occurred while processing your request." });
-    }
-};
+    );
+
+    worker.on("completed", async (job, result) => {
+        console.log(`Search job ${job.id} completed`);
+
+        // Cache the result
+        const cacheKey = `play:search:${job.data.country}:${job.data.query}:${job.data.permissions}`;
+        console.log(`Adding ${cacheKey} to cache...`);
+        await cacheService.set(cacheKey, result, 3600); // Cache for 1 hour
+    });
+
+    worker.on("failed", (job, err) => {
+        console.error(`Worker ${worker.name} failed job ${job.id} with error:`, err);
+    });
+
+    searchWorkers.push(worker);
+}
 
 const downloadRelog = (req, res) => {
     // creating a log file
@@ -292,7 +328,7 @@ const downloadCSV = (req, res) => {
 };
 
 module.exports = {
-    search: searchController,
+    newSearchController,
     downloadCSV,
     downloadRelog,
 };
