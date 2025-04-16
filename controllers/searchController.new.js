@@ -65,7 +65,7 @@ const newSearchController = async (req, res) => {
 };
 
 // The number of concurrent workers
-const WORKER_COUNT = 4;
+const WORKER_COUNT = 1;
 
 const searchWorkers = [];
 
@@ -107,7 +107,7 @@ for (let i = 0; i < WORKER_COUNT; i++) {
                     relatedResults.push(await search({ term: relatedQuery, country: country, throttle: 10 }));
 
                     // Introduce a delay between requests (e.g., 1 second)
-                    await new Promise((resolve) => setTimeout(resolve, 5000));
+                    await new Promise((resolve) => setTimeout(resolve, 3000));
                 }
             }
 
@@ -131,7 +131,7 @@ for (let i = 0; i < WORKER_COUNT; i++) {
             const detailedResults = await Promise.all(
                 allResults.map(async (appInfo) => {
                     try {
-                        await new Promise((resolve) => setTimeout(resolve, 5000));
+                        await new Promise((resolve) => setTimeout(resolve, 3000));
                         const appDetails = await app({
                             appId: appInfo.appId,
                             country: country,

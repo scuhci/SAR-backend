@@ -1,13 +1,16 @@
 const express = require("express");
 const morgan = require("morgan");
 const router = express.Router();
-const { scrapeList } = require("./controllers/listController");
+const { downloadTopChartsCSV, downloadTopChartsRelog, scrapeList } = require("../controllers/listController");
 const { queues } = require("../bullMQConfig.js");
 
 router.use(morgan("combined"));
 
 // Search endpoint
 router.get("/", scrapeList);
+
+router.use("/download-relog", downloadTopChartsRelog);
+router.use("/download-csv", downloadTopChartsCSV);
 
 // BullMQ Job Endpoint
 router.get("/job-status", async (req, res) => {
@@ -16,7 +19,7 @@ router.get("/job-status", async (req, res) => {
         console.error("Missing Job ID");
         return res.status(400).json({ error: "Job ID is missing.\n" });
     }
-    const job = await queues.topLists.getJob(jobId);
+    const job = await queues.topList.getJob(jobId);
 
     if (!job) {
         return res.status(404).json({ error: "Job not found" });

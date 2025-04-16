@@ -1,7 +1,7 @@
 const express = require("express");
 const morgan = require("morgan");
 const router = express.Router();
-const scrapeReviews = require("../controllers/reviewsController");
+const { scrapeReviews } = require("../controllers/reviewsController");
 const { queues } = require("../bullMQConfig.js");
 
 router.use(morgan("combined"));
@@ -31,7 +31,7 @@ router.get("/job-status", async (req, res) => {
         res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
 
         // Set response headers for CSV download
-        res.setHeader("Content-Disposition", `attachment; filename="${appId}_reviews.csv"`);
+        res.setHeader("Content-Disposition", `attachment; filename="${job.data.appId}_reviews.csv"`);
         res.setHeader("Content-Type", "text/csv");
 
         return res.send(result);
