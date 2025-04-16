@@ -90,7 +90,7 @@ for (let i = 0; i < WORKER_COUNT; i++) {
                 };
             }
 
-            const mainResults = await search({ term: query, country: country });
+            const mainResults = await search({ term: query, country: country, throttle: 10 });
             const relatedResults = [];
 
             // if an appID is passed as the query
@@ -104,7 +104,7 @@ for (let i = 0; i < WORKER_COUNT; i++) {
                 for (const mainResult of mainResults) {
                     console.log("[%s] Main Title Fetched: %s\n", `search-worker-${i}`, mainResult.title);
                     const relatedQuery = `related to ${mainResult.title}`;
-                    relatedResults.push(await search({ term: relatedQuery, country: country }));
+                    relatedResults.push(await search({ term: relatedQuery, country: country, throttle: 10 }));
 
                     // Introduce a delay between requests (e.g., 1 second)
                     await new Promise((resolve) => setTimeout(resolve, 5000));
