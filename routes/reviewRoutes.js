@@ -23,10 +23,11 @@ router.get("/job-status", async (req, res) => {
     }
 
     const state = await job.getState();
-
+    res.setHeader("X-Job-State", state);
     if (state === "completed") {
         const result = await job.returnvalue;
-
+        
+        
         res.set("Access-Control-Allow-Origin", "*");
         res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
 
@@ -34,7 +35,7 @@ router.get("/job-status", async (req, res) => {
         res.setHeader("Content-Disposition", `attachment; filename="${job.data.appId}_reviews.csv"`);
         res.setHeader("Content-Type", "text/csv");
 
-        return res.send(result);
+        return res.send(result.data);
     }
 
     if (state === "failed") {

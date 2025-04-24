@@ -102,7 +102,11 @@ for (let i = 0; i < WORKER_COUNT; i++) {
             const cachedResult = await cacheService.get(cacheKey);
             if (cachedResult) {
                 console.log("Cache hit!");
-                return cachedResult;
+                return {
+                    fromCache: true,
+                    data: cachedResult
+                };
+                // return cachedResult;
             }
             try {
                 // Get the actual count of reviews
@@ -119,7 +123,11 @@ for (let i = 0; i < WORKER_COUNT; i++) {
                 const csvData = jsonToCsv(country_reviews, "reviews");
 
                 // Send the CSV data as a response
-                return csvData;
+                return {
+                    fromCache: false,
+                    data: csvData
+                };
+                // return csvData
             } catch (error) {
                 console.error("Error getting reviews:", error);
                 throw new Error("An error occurred while getting reviews.", { status: 500 });
@@ -128,6 +136,7 @@ for (let i = 0; i < WORKER_COUNT; i++) {
         {
             connection: redisConnection,
             name: `reviews-worker-${i}`,
+            lockDuration: 5 * 60 * 1000,
             limiter: {
                 max: 20,
                 duration: 60000,
@@ -139,14 +148,27 @@ for (let i = 0; i < WORKER_COUNT; i++) {
         console.log(`Review job ${job.id} completed`);
 
         // Cache the result
+        if (result.fromCache) {
+            console.log(`Job ${job.id} came from cache — skipping cache write`);        
+            return;
+        }
+        
+        // Cache the result
+        console.log(result.data);
         const cacheKey = `play:reviews:${job.data.countryCode}:${job.data.appId}`;
         console.log(`Adding ${cacheKey} to cache...`);
-        await cacheService.set(cacheKey, result, 3600); // Cache for 1 hour
+        await cacheService.set(cacheKey, result.data, 3600); // Cache for 1 hour
     });
 
     worker.on("failed", (job, err) => {
         console.error(`Worker ${worker.name} failed job ${job.id} with error:`, err);
+        return;
     });
+
+    worker.on('error', err => {
+        console.error(`Worker ${worker.name} failed job ${job.id} with error:`, err);
+        return;
+      });
 
     reviewsWorkers.push(worker);
 }

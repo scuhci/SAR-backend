@@ -33,7 +33,7 @@ router.get("/job-status", async (req, res) => {
     }
 
     if (state === "failed") {
-        return res.status(500).json({ error: "An error occurred while processing your request." });
+        return res.status(500).json({status: state, error: "An error occurred while processing your request." });
     }
 
     return res.json({ status: state });

@@ -85,8 +85,9 @@ for (let i = 0; i < WORKER_COUNT; i++) {
             if (cachedResult) {
                 console.log("Cache hit!");
                 return {
-                    totalCount: cachedResult.length,
-                    results: cachedResult,
+                    fromCache: true,
+                    "totalCount": cachedResult.totalCount,
+                    "results" : cachedResult.results,
                 };
             }
 
@@ -211,6 +212,7 @@ for (let i = 0; i < WORKER_COUNT; i++) {
 
             // Return the result
             return {
+                fromCache: false,
                 totalCount: uniqueResults.length,
                 results: resultsToSend,
             };
@@ -229,9 +231,18 @@ for (let i = 0; i < WORKER_COUNT; i++) {
         console.log(`Search job ${job.id} completed`);
 
         // Cache the result
+        if (result.fromCache) {
+            console.log(`Job ${job.id} came from cache — skipping cache write.`);        
+            return;
+        }
+        
+        cacheResult = {
+            "totalCount" : result.totalCount,
+            "results" : result.results,
+        }
         const cacheKey = `play:search:${job.data.country}:${job.data.query}:${job.data.permissions}`;
         console.log(`Adding ${cacheKey} to cache...`);
-        await cacheService.set(cacheKey, result, 3600); // Cache for 1 hour
+        await cacheService.set(cacheKey, cacheResult, 3600); // Cache for 1 hour
     });
 
     worker.on("failed", (job, err) => {
