@@ -165,6 +165,7 @@ for (let i = 0; i < WORKER_COUNT; i++) {
         {
             connection: redisConnection,
             name: `toplist-worker-${i}`,
+            lockDuration: 5 * 60 * 1000,
             limiter: {
                 max: 20,
                 duration: 60000,
@@ -176,6 +177,13 @@ for (let i = 0; i < WORKER_COUNT; i++) {
         console.log(`Review job ${job.id} completed`);
 
         // Cache the result
+        if (result.fromCache) {
+            console.log(`Job ${job.id} came from cache — skipping cache write`);
+            return;
+        }
+
+        // Cache the result
+        console.log(result.data);
         const cacheKey = `play:toplist:${job.data.collection}:${job.data.category}:${job.data.country}:${job.data.num}:${job.data.permissions}`;
         console.log(`Adding ${cacheKey} to cache...`);
         await cacheService.set(cacheKey, result, 3600); // Cache for 1 hour

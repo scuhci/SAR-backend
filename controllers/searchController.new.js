@@ -225,6 +225,7 @@ for (let i = 0; i < WORKER_COUNT; i++) {
         {
             connection: redisConnection,
             name: `search-worker-${i}`,
+            lockDuration: 5 * 60 * 1000,
             limiter: {
                 max: 20,
                 duration: 60000,
