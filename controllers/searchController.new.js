@@ -86,8 +86,8 @@ for (let i = 0; i < WORKER_COUNT; i++) {
                 console.log("Cache hit!");
                 return {
                     fromCache: true,
-                    "totalCount": cachedResult.totalCount,
-                    "results" : cachedResult.results,
+                    totalCount: cachedResult.totalCount,
+                    results: cachedResult.results,
                 };
             }
 
@@ -210,6 +210,11 @@ for (let i = 0; i < WORKER_COUNT; i++) {
                 csvData = uniqueResults;
             }
 
+            const pushQuery = "c:" + country + "_t:" + query; // new relog key since results are based on country + search query now
+            // we want users to get the CSV results corresponding to their entire search, so an update was necessary
+            node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
+            console.log("CSV stored on backend");
+
             // Return the result
             return {
                 fromCache: false,
@@ -232,14 +237,14 @@ for (let i = 0; i < WORKER_COUNT; i++) {
 
         // Cache the result
         if (result.fromCache) {
-            console.log(`Job ${job.id} came from cache — skipping cache write.`);        
+            console.log(`Job ${job.id} came from cache — skipping cache write.`);
             return;
         }
-        
+
         cacheResult = {
-            "totalCount" : result.totalCount,
-            "results" : result.results,
-        }
+            totalCount: result.totalCount,
+            results: result.results,
+        };
         const cacheKey = `play:search:${job.data.country}:${job.data.query}:${job.data.permissions}`;
         console.log(`Adding ${cacheKey} to cache...`);
         await cacheService.set(cacheKey, cacheResult, 3600); // Cache for 1 hour
