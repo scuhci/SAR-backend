@@ -1,19 +1,16 @@
 const express = require("express");
 const morgan = require("morgan");
 const router = express.Router();
-const searchController = require("../controllers/searchController");
-const { newSearchController } = require("../controllers/searchController.new.js");
+const { downloadTopChartsCSV, downloadTopChartsRelog, scrapeList } = require("../controllers/listController");
 const { queues } = require("../bullMQConfig.js");
 
 router.use(morgan("combined"));
 
 // Search endpoint
-// router.get("/", searchController.search);
-router.get("/", newSearchController);
+router.get("/", scrapeList);
 
-// Endpoint to download CSV & Relog
-router.get("/download-csv", searchController.downloadCSV);
-router.get("/download-relog", searchController.downloadRelog);
+router.use("/download-relog", downloadTopChartsRelog);
+router.use("/download-csv", downloadTopChartsCSV);
 
 // BullMQ Job Endpoint
 router.get("/job-status", async (req, res) => {
@@ -22,7 +19,7 @@ router.get("/job-status", async (req, res) => {
         console.error("Missing Job ID");
         return res.status(400).json({ error: "Job ID is missing.\n" });
     }
-    const job = await queues.search.getJob(jobId);
+    const job = await queues.topList.getJob(jobId);
 
     if (!job) {
         return res.status(404).json({ error: "Job not found" });
@@ -36,7 +33,7 @@ router.get("/job-status", async (req, res) => {
     }
 
     if (state === "failed") {
-        return res.status(500).json({ status: state, error: "An error occurred while processing your request." });
+        return res.status(500).json({status: state, error: "An error occurred while processing your request." });
     }
 
     return res.json({ status: state });
