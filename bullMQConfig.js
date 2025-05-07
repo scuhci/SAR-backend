@@ -14,7 +14,6 @@ const redisClient = new Redis(redisConnection);
 const queues = {
     search: new Queue("search-queue", { connection: redisConnection }),
     reviews: new Queue("reviews-queue", { connection: redisConnection }),
-    topList: new Queue("toplist-queue", { connection: redisConnection }),
 };
 
 // Create a simple cache mechanism using Redis

@@ -101,14 +101,12 @@ for (let i = 0; i < WORKER_COUNT; i++) {
                 // Secondary search for each primary result if required
                 console.log("App ID not passed\n");
                 for (const mainResult of mainResults) {
-                    console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
+                    console.log("[%s] Main Title Fetched: %s\n", `search-worker-${i}`, mainResult.title);
                     try {
                         relatedResults.push(...(await similar({ appId: mainResult.appId })));
                     } catch {
                         console.error(`Unable to fetch app details for appID: ${mainResult.appId}`);
                     }
-                    //const relatedQuery = `related to ${mainResult.title}`;
-                    // relatedResults.push(await search({ term: relatedQuery }));
                     // Introduce a delay between requests (e.g., 1 second)
                     await new Promise((resolve) => setTimeout(resolve, 3000));
                 }
@@ -218,7 +216,7 @@ for (let i = 0; i < WORKER_COUNT; i++) {
             totalCount: result.totalCount,
             results: result.results,
         };
-        const cacheKey = `play:search:${job.data.country}:${job.data.query}:${job.data.permissions}`;
+        const cacheKey = `ios:search:${job.data.country}:${job.data.query}`;
         console.log(`Adding ${cacheKey} to cache...`);
         await cacheService.set(cacheKey, cacheResult, 3600); // Cache for 1 hour
     });
