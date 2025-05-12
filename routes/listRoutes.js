@@ -1,13 +1,17 @@
 const express = require("express");
 const morgan = require("morgan");
 const router = express.Router();
-const { scrapeReviews } = require("../controllers/reviewsController");
+const { scrapeList, downloadTopChartsRelog, downloadTopChartsCSV } = require("../controllers/listController");
 const { queues } = require("../bullMQConfig.js");
 
 router.use(morgan("combined"));
 
 // Search endpoint
-router.get("/", scrapeReviews);
+router.get("/", scrapeList);
+
+// Endpoint to download CSV & Relog
+router.get("/download-csv", downloadTopChartsCSV);
+router.get("/download-relog", downloadTopChartsRelog);
 
 // BullMQ Job Endpoint
 router.get("/job-status", async (req, res) => {
@@ -16,26 +20,18 @@ router.get("/job-status", async (req, res) => {
         console.error("Missing Job ID");
         return res.status(400).json({ error: "Job ID is missing.\n" });
     }
-    const job = await queues.reviews.getJob(jobId);
+    const job = await queues.toplist.getJob(jobId);
 
     if (!job) {
         return res.status(404).json({ error: "Job not found" });
     }
 
     const state = await job.getState();
-    res.setHeader("X-Job-State", state);
+
     if (state === "completed") {
         const result = await job.returnvalue;
-        console.log("Result: ", result);
-
         res.set("Access-Control-Allow-Origin", "*");
-        res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
-
-        // Set response headers for CSV download
-        res.setHeader("Content-Disposition", `attachment; filename="${job.data.appId}_reviews.csv"`);
-        res.setHeader("Content-Type", "text/csv");
-
-        return res.send(result.data);
+        return res.json({ status: state, data: result });
     }
 
     if (state === "failed") {

@@ -79,7 +79,7 @@ for (let i = 0; i < WORKER_COUNT; i++) {
             const { appId, countryCode } = job.data;
 
             // Generate cache key
-            const cacheKey = `play:reviews:${countryCode}:${appId}`;
+            const cacheKey = `ios:reviews:${countryCode}:${appId}`;
             console.log(`Checking cache for ${cacheKey}...`);
 
             // Check if result exists in cache
