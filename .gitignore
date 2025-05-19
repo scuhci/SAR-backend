@@ -4,6 +4,7 @@ build
 .DS_Store
 search_results.csv
 package-lock.json
+dump.rdb
 
 # Logs
 logs

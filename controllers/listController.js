@@ -47,12 +47,6 @@ const scrapeList = async (req, res) => {
     const categoryName = req.query.categoryName;
     const country = req.query.country;
 
-    // Check there is an app id
-    if (!appId) {
-        console.error("Missing App ID");
-        return res.status(400).json({ error: "App ID is missing.\n" });
-    }
-
     const cacheKey = `ios:toplist:${collection}:${category}:${categoryName}:${country}`;
 
     // Add job to the queue
