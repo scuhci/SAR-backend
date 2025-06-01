@@ -43,6 +43,7 @@ const searchController = async (req, res) => {
   const query = req.query.query;
   const permissions = req.query.includePermissions === "true"
   const country = req.query.countryCode;
+  const time = req.query.time;
   // console.log("[%s] Query Passed: %s\n", file_name, query);
   // console.log("[%s] Country Code Passed: %s\n", file_name, country);
 
@@ -53,7 +54,6 @@ const searchController = async (req, res) => {
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
   try {
-
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
     // if an appID is passed as the query
@@ -228,8 +228,9 @@ const searchController = async (req, res) => {
     for (const result of csvData) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-    const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // new relog key since results are based on country + permissions + search query now
+    const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions + "_t:" + time; // new relog key since results are based on country + permissions + search query now
     // we want users to get the CSV results corresponding to their entire search, so an update was necessary
+    console.log("Raphtest", pushQuery)
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
     console.log("CSV stored on backend");
     return res.json({
