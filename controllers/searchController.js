@@ -15,6 +15,7 @@ const router = require("../routes/searchRoutes");
 
 let csvData;
 let globalQuery;
+let emailMappings = {};
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -346,8 +347,29 @@ const downloadCSV = (req, res) => {
   });
 };
 
+const addEmailNotification = (req, res) => {
+  cors()(req, res, () => {
+    try {
+      const queryId = req.query?.queryId;
+      const email = req.query?.email;
+
+      if (!queryId || !email)
+        return res.status(400).json({status: "error", message: "uh oh, queryId or email wasn't processed right"});
+      
+      emailMappings[queryId] = email;
+
+      // then we leave and process the email sometime?
+    }
+    catch (e) {
+      console.log("Failed to add email", e);
+      res.status(500).json({status: "error", message: e});
+    }
+  })
+}
+
 module.exports = {
   search: searchController,
   downloadCSV,
   downloadRelog,
+  addEmailNotification,
 };
