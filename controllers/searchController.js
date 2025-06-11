@@ -350,6 +350,8 @@ const downloadCSV = (req, res) => {
 const addEmailNotification = (req, res) => {
   cors()(req, res, () => {
     try {
+      console.log("Received request on /search/email endpoint", req.query); 
+
       const queryId = req.query?.queryId;
       const email = req.query?.email;
 

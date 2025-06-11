@@ -23,7 +23,7 @@ app.use('/reviews', scrapeReviews);
 app.use('/toplists', scrapeList);
 app.use('/download-top-relog', downloadTopChartsRelog);
 app.use('/download-top-csv', downloadTopChartsCSV);
-app.use('/email-notify', addEmailNotification);
+app.post('/email-notify', addEmailNotification);
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
