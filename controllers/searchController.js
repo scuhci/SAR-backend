@@ -5,6 +5,7 @@ const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
+const nodemailer = require("nodemailer");
 var node_ttl = new nodeTTL();
 
 const path = require("path");
@@ -40,9 +41,21 @@ function calculateResultSimilarityScore(result) {
   return result;
 }
 
+// Email service config -- test account
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    type: "OAuth2",
+    user: "kindjosh356@gmail.com",
+    clientId: process.env.clientId,
+    clientSecret: process.env.clientSecret,
+    refreshToken: process.env.refreshToken,
+  },
+});
+
 const searchController = async (req, res) => {
   const query = req.query.query;
-  const permissions = req.query.includePermissions === "true"
+  const permissions = req.query.includePermissions === "true";
   const country = req.query.countryCode;
   const time = req.query.time;
   // console.log("[%s] Query Passed: %s\n", file_name, query);
@@ -170,21 +183,19 @@ const searchController = async (req, res) => {
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
-    const cleanedLimitedResults = resultsWithSimilarityScore.map(
-      (result) => {
-        // Clean the summary column
-        if (result.summary) {
-          result.summary = cleanText(result.summary);
-        }
-
-        // Clean the recentChanges column
-        if (result.recentChanges) {
-          result.recentChanges = cleanText(result.recentChanges);
-        }
-
-        return result;
+    const cleanedLimitedResults = resultsWithSimilarityScore.map((result) => {
+      // Clean the summary column
+      if (result.summary) {
+        result.summary = cleanText(result.summary);
       }
-    );
+
+      // Clean the recentChanges column
+      if (result.recentChanges) {
+        result.recentChanges = cleanText(result.recentChanges);
+      }
+
+      return result;
+    });
 
     // Check if includePermissions is true
     if (permissions) {
@@ -195,24 +206,22 @@ const searchController = async (req, res) => {
       );
 
       // Process permissions data for the sliced 5 results
-      const processedPermissionsResults = permissionsResults.map(
-        (appInfo) => {
-          const permissionsWithSettings = standardPermissionsList.map(
-            (permission) => ({
-              permission: permission,
-              // type: permission.type,
-              isPermissionRequired: appInfo.permissions.some(
-                (appPermission) => appPermission.permission === permission
-              )
-                ? true
-                : false,
-            })
-          );
+      const processedPermissionsResults = permissionsResults.map((appInfo) => {
+        const permissionsWithSettings = standardPermissionsList.map(
+          (permission) => ({
+            permission: permission,
+            // type: permission.type,
+            isPermissionRequired: appInfo.permissions.some(
+              (appPermission) => appPermission.permission === permission
+            )
+              ? true
+              : false,
+          })
+        );
 
-          // Return appInfo with permissions
-          return { ...appInfo, permissions: permissionsWithSettings };
-        }
-      );
+        // Return appInfo with permissions
+        return { ...appInfo, permissions: permissionsWithSettings };
+      });
 
       resultsToSend = processedPermissionsResults;
       csvData = permissionsResults;
@@ -229,9 +238,29 @@ const searchController = async (req, res) => {
     for (const result of csvData) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-    const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions + "_t:" + time; // new relog key since results are based on country + permissions + search query now
+    const pushQuery =
+      "c:" + country + "_t:" + query + "_p:" + permissions + "_t:" + time; // new relog key since results are based on country + permissions + search query now
     // we want users to get the CSV results corresponding to their entire search, so an update was necessary
-    console.log("Raphtest", pushQuery)
+    console.log(pushQuery);
+    // email the user that their request is done
+    console.log("Test mapping: ", emailMappings[pushQuery]);
+    if (emailMappings[pushQuery] !== undefined) {
+      // get the email associated with a query
+      const userEmail = emailMappings[pushQuery];
+      (async () => {
+        const info = await transporter.sendMail({
+          from: '"Jeshwin from the SMAR Team" <smar-tool@googlegroups.com>',
+          to: userEmail,
+          subject: "Testing: Your App Store/Play Store Data is Ready!",
+          text: "Hello! Here's the link to your thing, or a zip file whatever",
+          html: "Hello! Here's the link to your thing, or a zip file whatever",
+        });
+
+        console.log("Message sent:", info.messageId);
+        delete emailMappings[pushQuery];
+      })();
+    }
+
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
     console.log("CSV stored on backend");
     return res.json({
@@ -328,8 +357,8 @@ const downloadCSV = (req, res) => {
 
       // Suggest a filename to the browser
       const suggestedFilename = `${query}_${formattedTimestamp}.csv`;
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-      
+      res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+
       res.setHeader("Content-Type", ["text/csv", "charset=utf-8"]);
 
       // Set response headers for CSV download
@@ -350,24 +379,25 @@ const downloadCSV = (req, res) => {
 const addEmailNotification = (req, res) => {
   cors()(req, res, () => {
     try {
-      console.log("Received request on /search/email endpoint", req.query); 
+      console.log("Received request on /search/email endpoint", req.query);
 
       const queryId = req.query?.queryId;
       const email = req.query?.email;
 
       if (!queryId || !email)
-        return res.status(400).json({status: "error", message: "uh oh, queryId or email wasn't processed right"});
-      
-      emailMappings[queryId] = email;
+        return res.status(400).json({
+          status: "error",
+          message: "uh oh, queryId or email wasn't processed right",
+        });
 
-      // then we leave and process the email sometime?
-    }
-    catch (e) {
+      emailMappings[queryId] = email;
+      console.log("Email Mapping test: ", emailMappings[queryId]);
+    } catch (e) {
       console.log("Failed to add email", e);
-      res.status(500).json({status: "error", message: e});
+      res.status(500).json({ status: "error", message: e });
     }
-  })
-}
+  });
+};
 
 module.exports = {
   search: searchController,

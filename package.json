@@ -16,7 +16,8 @@
     "log-timestamp": "^0.3.0",
     "morgan": "^1.10.0",
     "natural": "^6.10.4",
-    "node-ttl": "^0.2.0"
+    "node-ttl": "^0.2.0",
+    "nodemailer": "^7.0.3"
   },
   "directories": {
     "test": "test"
