@@ -1,3 +1,5 @@
+require("dotenv").config();
+const { google } = require("googleapis");
 const natural = require("natural");
 const { search, app } = require("google-play-scraper");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
@@ -41,15 +43,11 @@ function calculateResultSimilarityScore(result) {
   return result;
 }
 
-// Email service config -- test account
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    type: "OAuth2",
-    user: "kindjosh356@gmail.com",
-    clientId: process.env.clientId,
-    clientSecret: process.env.clientSecret,
-    refreshToken: process.env.refreshToken,
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_PASS,
   },
 });
 
@@ -240,24 +238,66 @@ const searchController = async (req, res) => {
     }
     const pushQuery =
       "c:" + country + "_t:" + query + "_p:" + permissions + "_t:" + time; // new relog key since results are based on country + permissions + search query now
-    // we want users to get the CSV results corresponding to their entire search, so an update was necessary
+
     console.log(pushQuery);
     // email the user that their request is done
-    console.log("Test mapping: ", emailMappings[pushQuery]);
     if (emailMappings[pushQuery] !== undefined) {
       // get the email associated with a query
       const userEmail = emailMappings[pushQuery];
       (async () => {
-        const info = await transporter.sendMail({
-          from: '"Jeshwin from the SMAR Team" <smar-tool@googlegroups.com>',
-          to: userEmail,
-          subject: "Testing: Your App Store/Play Store Data is Ready!",
-          text: "Hello! Here's the link to your thing, or a zip file whatever",
-          html: "Hello! Here's the link to your thing, or a zip file whatever",
-        });
+        try {
+          // generate the CSV to send back, similar to the downloadCSV option
+          const csv = jsonToCsv(
+            csvData,
+            "app",
+            standardPermissionsList,
+            permissions
+          );
 
-        console.log("Message sent:", info.messageId);
-        delete emailMappings[pushQuery];
+          const timestamp = new Date().toLocaleString("en-US", {
+            month: "numeric",
+            day: "numeric",
+            year: "numeric",
+            hour: "numeric",
+            minute: "numeric",
+            hour12: true,
+          });
+
+          const dateComponents = timestamp
+            .split("/")
+            .map((component) => component.trim());
+          const timeComponents = dateComponents[2]
+            .split(",")
+            .map((component) => component.trim());
+
+          const formattedTimestamp = `${dateComponents[0]}${dateComponents[1]}${timeComponents[0]}`;
+          const csvFilename = `${query}_${formattedTimestamp}.csv`;
+
+          transporter.sendMail(
+            {
+              from: '"Jeshwin from the SMAR Team" <smar-tool@googlegroups.com>',
+              to: userEmail,
+              subject: "Testing: Your App Store/Play Store Data is Ready!",
+              text: "Hello! Here's the link to your thing, or a csv file whatever",
+              html: "Hello! Here's the link to your thing, or a csv file whatever",
+              attachments: [
+                {
+                  filename: csvFilename,
+                  content: csv,
+                  contentType: "text/csv",
+                },
+              ],
+            },
+            (error) => {
+              if (error) console.log("Error:", error);
+            }
+          );
+
+          console.log("Email Sent");
+          delete emailMappings[pushQuery];
+        } catch (e) {
+          console.log(e);
+        }
       })();
     }
 
