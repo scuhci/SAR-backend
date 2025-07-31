@@ -431,6 +431,7 @@ const addEmailNotification = (req, res) => {
         });
 
       emailMappings[queryId] = email;
+      res.status(200).json({ status: "success" });
       console.log("Email Mapping test: ", emailMappings[queryId]);
     } catch (e) {
       console.log("Failed to add email", e);
