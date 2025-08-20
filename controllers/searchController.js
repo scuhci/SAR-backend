@@ -217,7 +217,6 @@ const downloadRelog = (req, res) => {
         version: json_raw.version,
         date_time: new Date(),
         store: req.query.store,
-
         country: req.query.countryCode,
         search_query: req.query.query,
         num_results: req.query.totalCount,

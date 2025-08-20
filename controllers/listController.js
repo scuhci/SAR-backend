@@ -128,7 +128,7 @@ const fetchList = async (collection, category, num, country) => {
         const logInfo = {
           version: json_raw.version,
           date_time: new Date(),
-          store: "App Store",
+          store: "iOS App Store",
           country: req.query.country,
           device: req.query.device,
           collection: req.query.collection,

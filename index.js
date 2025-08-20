@@ -1,7 +1,7 @@
 const express = require('express');
 const searchRoutes = require('./routes/searchRoutes');
 const { downloadRelog, downloadCSV } = require('./controllers/searchController');
-const { scrapeReviews } = require('./controllers/reviewsController'); 
+const { scrapeReviews, downloadReviewsRelog } = require('./controllers/reviewsController'); 
 const { scrapeList, downloadTopChartsCSV, downloadTopChartsRelog} = require('./controllers/listController');
 const path = require('path');
 const app = express();
@@ -17,6 +17,7 @@ app.use('/search', searchRoutes);
 app.get('/download-relog', downloadRelog);
 app.get('/download-csv', downloadCSV);
 app.use('/reviews', scrapeReviews);
+app.use('/download-reviews-relog', downloadReviewsRelog);
 app.use('/toplists', scrapeList)
 app.use('/download-top-relog', downloadTopChartsRelog);
 app.use('/download-top-csv', downloadTopChartsCSV);
