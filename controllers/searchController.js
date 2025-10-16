@@ -277,9 +277,9 @@ const searchController = async (req, res) => {
             {
               from: '"Jeshwin from the SMAR Team" <smar-tool@googlegroups.com>',
               to: userEmail,
-              subject: "Testing: Your App Store/Play Store Data is Ready!",
-              text: "Hello! Here's the link to your thing, or a csv file whatever",
-              html: "Hello! Here's the link to your thing, or a csv file whatever",
+              subject: "[SMAR Tool] Your App Store/Play Store Data is Ready!",
+              text: "👋Hello! Your CSV Is Ready Thank you for using the SMAR tool!",
+              html: "👋Hello! Here's your results from scraping! Thank you for using the SMAR tool! Best, The SMAR Team",
               attachments: [
                 {
                   filename: csvFilename,
