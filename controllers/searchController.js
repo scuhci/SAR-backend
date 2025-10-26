@@ -292,7 +292,7 @@ const searchController = async (req, res) => {
                               📱 SMAR Tool
                           </h1>
                           <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">
-                              Your App Store Data is Ready!
+                              Your Results are Ready!
                           </p>
                       </div>
                       
