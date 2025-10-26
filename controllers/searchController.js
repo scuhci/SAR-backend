@@ -273,13 +273,96 @@ const searchController = async (req, res) => {
           const formattedTimestamp = `${dateComponents[0]}${dateComponents[1]}${timeComponents[0]}`;
           const csvFilename = `${query}_${formattedTimestamp}.csv`;
 
+          const htmlContent = `
+              <!DOCTYPE html>
+              <html lang="en">
+              <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <title>SMAR Tool - Data Ready</title>
+              </head>
+              <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+                  <div style="max-width: 600px; margin: 0 auto; background-color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                      <!-- Header -->
+                      <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px 20px; text-align: center;">
+                          <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 300;">
+                              📱 SMAR Tool
+                          </h1>
+                          <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">
+                              Your App Store Data is Ready!
+                          </p>
+                      </div>
+                      
+                      <!-- Content -->
+                      <div style="padding: 40px 30px;">
+                          <div style="text-align: center; margin-bottom: 30px;">
+                              <h2 style="color: #333; margin: 0; font-size: 24px; font-weight: 600;">
+                                  Your data is ready to download!
+                              </h2>
+                          </div>
+                          
+                          <div style="background-color: #f8f9fa; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
+                              <h3 style="color: #333; margin: 0 0 15px 0; font-size: 18px;">Query Details:</h3>
+                              <div style="color: #666; line-height: 1.6;">
+                                  <p style="margin: 5px 0;"><strong>Search Query:</strong> ${query}</p>
+                                  <p style="margin: 5px 0;"><strong>Country:</strong> ${country}</p>
+                                  <p style="margin: 5px 0;"><strong>Include Permissions:</strong> ${
+                                    permissions ? "Yes" : "No"
+                                  }</p>
+                                  <p style="margin: 5px 0;"><strong>Results Found:</strong> ${
+                                    csvData.length
+                                  } apps</p>
+                              </div>
+                          </div>
+                          
+                          <div style="text-align: center; margin-bottom: 30px;">
+                              <p style="color: #666; font-size: 16px; line-height: 1.6; margin-bottom: 25px;">
+                                  Thank you for using the SMAR Tool! 
+                                  The results are attached to this email as a CSV file.
+                              </p>
+                              
+                              <div style="background-color: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0; text-align: left;">
+                                  <p style="margin: 0; color: #1976d2; font-size: 14px;">
+                                      <strong>📎 Attachment:</strong> ${csvFilename}<br>
+                                      This CSV file contains all the app data you requested and can be opened in Excel, Google Sheets, or any spreadsheet application.
+                                  </p>
+                              </div>
+                          </div>
+                          
+                          <!-- CTA Button -->
+                          <div style="text-align: center; margin: 30px 0;">
+                              <a href="https://www.smar-tool.org" 
+                                style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; padding: 15px 30px; border-radius: 25px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+                                  Visit SMAR Tool 🚀
+                              </a>
+                          </div>
+                      </div>
+                      
+                      <!-- Footer -->
+                      <div style="background-color: #f8f9fa; padding: 25px 30px; border-top: 1px solid #e9ecef;">
+                          <div style="text-align: center;">
+                              <p style="color: #999; font-size: 12px; margin: 0; line-height: 1.5;">
+                                  This search was performed using the SMAR tool. For questions or support, 
+                                  visit <a href="https://www.smar-tool.org" style="color: #667eea;">www.smar-tool.org</a>
+                              </p>
+                              <div style="margin-top: 15px;">
+                                  <span style="color: #ccc; font-size: 12px;">
+                                      © ${new Date().getFullYear()} SMAR Team
+                                  </span>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              </body>
+              </html>`;
+
           transporter.sendMail(
             {
               from: '"Jeshwin from the SMAR Team" <smar-tool@googlegroups.com>',
               to: userEmail,
               subject: "[SMAR Tool] Your App Store/Play Store Data is Ready!",
-              text: "👋Hello! Your CSV Is Ready Thank you for using the SMAR tool!",
-              html: "👋Hello! Here's your results from scraping! Thank you for using the SMAR tool! Best, The SMAR Team",
+              text: "👋Hello! Your CSV Is ready, thank you for using the SMAR tool!",
+              html: htmlContent,
               attachments: [
                 {
                   filename: csvFilename,
@@ -293,7 +376,7 @@ const searchController = async (req, res) => {
             }
           );
 
-          console.log("Email Sent");
+          // console.log("Email Sent");
           delete emailMappings[pushQuery];
         } catch (e) {
           console.log(e);
