@@ -1,7 +1,7 @@
 const express = require('express');
 const searchRoutes = require('./routes/searchRoutes');
 const permissionsRoute = require('./routes/permissionsRoute');
-const { downloadRelog, downloadCSV } = require('./controllers/searchController');
+const { downloadRelog, downloadCSV, addEmailNotification } = require('./controllers/searchController');
 const { scrapeReviews, downloadReviewsRelog } = require('./controllers/reviewsController'); 
 const { downloadTopChartsCSV, downloadTopChartsRelog, scrapeList } = require('./controllers/listController');
 
@@ -24,6 +24,7 @@ app.use('/download-reviews-relog', downloadReviewsRelog);
 app.use('/toplists', scrapeList);
 app.use('/download-top-relog', downloadTopChartsRelog);
 app.use('/download-top-csv', downloadTopChartsCSV);
+app.post('/email-notify', addEmailNotification);
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
