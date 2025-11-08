@@ -1,3 +1,5 @@
+require("dotenv").config();
+const { google } = require("googleapis");
 const natural = require("natural");
 const { search, app } = require("google-play-scraper");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
@@ -5,6 +7,7 @@ const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
+const nodemailer = require("nodemailer");
 var node_ttl = new nodeTTL();
 
 const path = require("path");
@@ -15,6 +18,7 @@ const router = require("../routes/searchRoutes");
 
 let csvData;
 let globalQuery;
+let emailMappings = {};
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -39,10 +43,19 @@ function calculateResultSimilarityScore(result) {
   return result;
 }
 
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_PASS,
+  },
+});
+
 const searchController = async (req, res) => {
   const query = req.query.query;
-  const permissions = req.query.includePermissions === "true"
+  const permissions = req.query.includePermissions === "true";
   const country = req.query.countryCode;
+  const time = req.query.time;
   // console.log("[%s] Query Passed: %s\n", file_name, query);
   // console.log("[%s] Country Code Passed: %s\n", file_name, country);
 
@@ -226,8 +239,154 @@ const searchController = async (req, res) => {
     for (const result of csvData) {
       console.log("[%s] %s\n", file_name, result.title);
     }
-    const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // new relog key since results are based on country + permissions + search query now
-    // we want users to get the CSV results corresponding to their entire search, so an update was necessary
+    const pushQuery =
+      "c:" + country + "_t:" + query + "_p:" + permissions + "_t:" + time; // new relog key since results are based on country + permissions + search query now
+
+    console.log(pushQuery);
+    // email the user that their request is done
+    if (emailMappings[pushQuery] !== undefined) {
+      // get the email associated with a query
+      const userEmail = emailMappings[pushQuery];
+      (async () => {
+        try {
+          // generate the CSV to send back, similar to the downloadCSV option
+          const csv = jsonToCsv(
+            csvData,
+            "app",
+            standardPermissionsList,
+            permissions
+          );
+
+          const timestamp = new Date().toLocaleString("en-US", {
+            month: "numeric",
+            day: "numeric",
+            year: "numeric",
+            hour: "numeric",
+            minute: "numeric",
+            hour12: true,
+          });
+
+          const dateComponents = timestamp
+            .split("/")
+            .map((component) => component.trim());
+          const timeComponents = dateComponents[2]
+            .split(",")
+            .map((component) => component.trim());
+
+          const formattedTimestamp = `${dateComponents[0]}${dateComponents[1]}${timeComponents[0]}`;
+          const csvFilename = `${query}_${formattedTimestamp}.csv`;
+
+          const htmlContent = `
+              <!DOCTYPE html>
+              <html lang="en">
+              <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <title>SMAR Tool - Data Ready</title>
+              </head>
+              <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+                  <div style="max-width: 600px; margin: 0 auto; background-color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                      <!-- Header -->
+                      <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px 20px; text-align: center;">
+                          <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 300;">
+                              📱 SMAR Tool
+                          </h1>
+                          <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">
+                              Your Results are Ready!
+                          </p>
+                      </div>
+                      
+                      <!-- Content -->
+                      <div style="padding: 40px 30px;">
+                          <div style="text-align: center; margin-bottom: 30px;">
+                              <h2 style="color: #333; margin: 0; font-size: 24px; font-weight: 600;">
+                                  Your data is ready to download!
+                              </h2>
+                          </div>
+                          
+                          <div style="background-color: #f8f9fa; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
+                              <h3 style="color: #333; margin: 0 0 15px 0; font-size: 18px;">Query Details:</h3>
+                              <div style="color: #666; line-height: 1.6;">
+                                  <p style="margin: 5px 0;"><strong>Search Query:</strong> ${query}</p>
+                                  <p style="margin: 5px 0;"><strong>Country:</strong> ${country}</p>
+                                  <p style="margin: 5px 0;"><strong>Include Permissions:</strong> ${
+                                    permissions ? "Yes" : "No"
+                                  }</p>
+                                  <p style="margin: 5px 0;"><strong>Results Found:</strong> ${
+                                    csvData.length
+                                  } apps</p>
+                              </div>
+                          </div>
+                          
+                          <div style="text-align: center; margin-bottom: 30px;">
+                              <p style="color: #666; font-size: 16px; line-height: 1.6; margin-bottom: 25px;">
+                                  Thank you for using the SMAR Tool! 
+                                  The results are attached to this email as a CSV file.
+                              </p>
+                              
+                              <div style="background-color: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0; text-align: left;">
+                                  <p style="margin: 0; color: #1976d2; font-size: 14px;">
+                                      <strong>📎 Attachment:</strong> ${csvFilename}<br>
+                                      This CSV file contains all the app data you requested and can be opened in Excel, Google Sheets, or any spreadsheet application.
+                                  </p>
+                              </div>
+                          </div>
+                          
+                          <!-- CTA Button -->
+                          <div style="text-align: center; margin: 30px 0;">
+                              <a href="https://www.smar-tool.org" 
+                                style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; padding: 15px 30px; border-radius: 25px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+                                  Visit SMAR Tool 🚀
+                              </a>
+                          </div>
+                      </div>
+                      
+                      <!-- Footer -->
+                      <div style="background-color: #f8f9fa; padding: 25px 30px; border-top: 1px solid #e9ecef;">
+                          <div style="text-align: center;">
+                              <p style="color: #999; font-size: 12px; margin: 0; line-height: 1.5;">
+                                  This search was performed using the SMAR tool. For questions or support, 
+                                  visit <a href="https://www.smar-tool.org" style="color: #667eea;">www.smar-tool.org</a>
+                              </p>
+                              <div style="margin-top: 15px;">
+                                  <span style="color: #ccc; font-size: 12px;">
+                                      © ${new Date().getFullYear()} SMAR Team
+                                  </span>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              </body>
+              </html>`;
+
+          transporter.sendMail(
+            {
+              from: '"Jeshwin from the SMAR Team" <smar-tool@googlegroups.com>',
+              to: userEmail,
+              subject: "[SMAR Tool] Your App Store/Play Store Data is Ready!",
+              text: "👋Hello! Your CSV Is ready, thank you for using the SMAR tool!",
+              html: htmlContent,
+              attachments: [
+                {
+                  filename: csvFilename,
+                  content: csv,
+                  contentType: "text/csv",
+                },
+              ],
+            },
+            (error) => {
+              if (error) console.log("Error:", error);
+            }
+          );
+
+          // console.log("Email Sent");
+          delete emailMappings[pushQuery];
+        } catch (e) {
+          console.log(e);
+        }
+      })();
+    }
+
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
     console.log("CSV stored on backend");
     return res.json({
@@ -343,8 +502,33 @@ const downloadCSV = (req, res) => {
   });
 };
 
+const addEmailNotification = (req, res) => {
+  cors()(req, res, () => {
+    try {
+      console.log("Received request on /search/email endpoint", req.query);
+
+      const queryId = req.query?.queryId;
+      const email = req.query?.email;
+
+      if (!queryId || !email)
+        return res.status(400).json({
+          status: "error",
+          message: "uh oh, queryId or email wasn't processed right",
+        });
+
+      emailMappings[queryId] = email;
+      res.status(200).json({ status: "success" });
+      console.log("Email Mapping test: ", emailMappings[queryId]);
+    } catch (e) {
+      console.log("Failed to add email", e);
+      res.status(500).json({ status: "error", message: e });
+    }
+  });
+};
+
 module.exports = {
   search: searchController,
   downloadCSV,
   downloadRelog,
+  addEmailNotification,
 };
