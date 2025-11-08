@@ -25,6 +25,7 @@ app.use('/toplists', scrapeList);
 app.use('/download-top-relog', downloadTopChartsRelog);
 app.use('/download-top-csv', downloadTopChartsCSV);
 app.post('/email-notify', addEmailNotification);
+app.get('/*', (req,res) => res.sendFile(path.join(__dirname+'/public/index.html')));
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
