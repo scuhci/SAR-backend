@@ -16,15 +16,14 @@ app.use(express.static(buildpath));
 
 // API Endpoints
 app.use('/search', searchRoutes);
-app.get('/download-relog', downloadRelog);
-app.get('/download-csv', downloadCSV);
+app.use('/api', searchRoutes);
+app.use('/ios', searchRoutes);
 app.use('/permissions', permissionsRoute);
 app.use('/reviews', scrapeReviews);
 app.use('/download-reviews-relog', downloadReviewsRelog);
 app.use('/toplists', scrapeList);
 app.use('/download-top-relog', downloadTopChartsRelog);
 app.use('/download-top-csv', downloadTopChartsCSV);
-app.post('/email-notify', addEmailNotification);
 app.get('/*', (req,res) => res.sendFile('/home/ubuntu/smar/sar-frontend/public/index.html'));
 
 app.listen(port, () => {
