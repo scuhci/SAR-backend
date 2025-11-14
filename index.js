@@ -9,6 +9,9 @@ const path = require('path');
 const app = express();
 const port = 5001;
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 // change for deployment
 const _dirname = path.dirname("");
 const buildpath = path.join(_dirname, "../sar-frontend/build");
