@@ -19,7 +19,6 @@ app.use(express.static(buildpath));
 
 // API Endpoints
 app.use('/search', searchRoutes);
-app.use('/api', searchRoutes);
 app.use('/ios', searchRoutes);
 app.use('/permissions', permissionsRoute);
 app.use('/reviews', scrapeReviews);
