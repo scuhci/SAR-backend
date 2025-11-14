@@ -18,15 +18,27 @@ const buildpath = path.join(_dirname, "../sar-frontend/build");
 app.use(express.static(buildpath));
 
 // API Endpoints
-app.use("/search", searchRoutes);
+
+//! FOR LOCAL TESTING ONLY
 app.use("/api", searchRoutes);
 app.use("/ios", searchRoutes);
+
+// Regular search
+app.use("/search", searchRoutes);
 app.use("/permissions", permissionsRoute);
 app.use("/reviews", scrapeReviews);
+app.use("/download-csv", downloadCSV);
+app.use("/download-relog", downloadRelog);
+
+// Bulk reviews relog
 app.use("/download-reviews-relog", downloadReviewsRelog);
+
+// Top lists
 app.use("/toplists", scrapeList);
 app.use("/download-top-relog", downloadTopChartsRelog);
 app.use("/download-top-csv", downloadTopChartsCSV);
+
+// Fallback
 app.get("/*", (req, res) => res.sendFile("/home/ubuntu/smar/sar-frontend/public/index.html"));
 
 app.listen(port, () => {
