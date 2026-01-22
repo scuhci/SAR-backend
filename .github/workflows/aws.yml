@@ -1,0 +1,170 @@
+name: Deploy Next.js to EC2
+
+on:
+  push:
+    branches: [gplay-test]
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create deployment package
+        run: |
+          # Create a clean package without node_modules or build artifacts
+          tar -czf ../deploy.tar.gz \
+            --exclude=node_modules \
+            --exclude=.next \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=.env* \
+            --exclude=*.log \
+            --exclude=coverage \
+            --exclude=.nyc_output \
+            .
+          mv ../deploy.tar.gz ./deploy.tar.gz
+
+      - name: Upload source code to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.TEST_HOST }}
+          username: ${{ secrets.TES_USERNAME }}
+          key: ${{ secrets.TEST_SSH_KEY }}
+          port: ${{ secrets.TEST_SSH_PORT || 22 }}
+          command_timeout: 200m
+          source: "deploy.tar.gz"
+          target: "/tmp/"
+
+      - name: Deploy and build on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.TEST_HOST }}
+          username: ${{ secrets.TEST_USERNAME }}
+          key: ${{ secrets.TEST_SSH_KEY }}
+          port: ${{ secrets.TEST_SSH_PORT || 22 }}
+          command_timeout: 200m
+          script: |
+            # Load Node.js environment (common paths)
+            export PATH="$PATH:/usr/local/bin:/opt/nvm/versions/node/v22.*/bin"
+            
+            # Try to source common Node.js environment files
+            [ -f ~/.bashrc ] && source ~/.bashrc
+            [ -f ~/.nvm/nvm.sh ] && source ~/.nvm/nvm.sh
+            [ -f ~/.profile ] && source ~/.profile
+            
+            # Set deployment variables
+            APP_DIR="/home/ubuntu/smar/SAR-backend"
+            # BACKUP_DIR="/var/backups/jeshwinprince-$(date +%Y%m%d-%H%M%S)"
+
+            #! TODO: Replace with actual path to env file
+            ENV_DIR="/var/www/config/jeshwinprince"
+            ENV_FILE="$ENV_DIR/.env.production"
+            
+            # Check if Node.js and npm are available
+            if ! command -v node &> /dev/null; then
+              echo "❌ Node.js is not installed or not in PATH"
+              echo "Current PATH: $PATH"
+              echo "Please install Node.js 22 on your EC2 instance"
+              exit 1
+            fi
+            
+            if ! command -v npm &> /dev/null; then
+              echo "❌ npm is not available"
+              exit 1
+            fi
+            
+            echo "✅ Node.js version: $(node --version)"
+            echo "✅ npm version: $(npm --version)"
+            
+            # Check if PM2 is installed, install if not
+            if ! command -v pm2 &> /dev/null; then
+              echo "Installing PM2..."
+              npm install -g pm2
+            fi
+            
+            # Create persistent environment directory
+            sudo mkdir -p $ENV_DIR
+            sudo chown $USER:$USER $ENV_DIR
+            
+            # Use environment in config
+            echo "✅ Using existing environment file: $ENV_FILE"
+            
+            # Create backup of current deployment
+            # if [ -d "$APP_DIR" ]; then
+            #   sudo mkdir -p /var/backups
+            #   sudo cp -r $APP_DIR $BACKUP_DIR
+            #   echo "Backup created at $BACKUP_DIR"
+            # fi
+            
+            # Stop the application (assuming PM2)
+            pm2 stop "SAR-backend" || echo "App not running"
+            
+            # Create application directory
+            sudo mkdir -p $APP_DIR
+            sudo chown $USER:$USER $APP_DIR
+            
+            # Clear existing files
+            rm -rf $APP_DIR/*
+            
+            # Extract source code
+            cd $APP_DIR
+            tar -xzf /tmp/deploy.tar.gz
+            rm /tmp/deploy.tar.gz
+            
+            # Create symlink to persistent environment file
+            ln -sf "$ENV_FILE" "$APP_DIR/.env.production"
+            echo "✅ Linked environment file: $APP_DIR/.env.production -> $ENV_FILE"
+            
+            # Install dependencies
+            echo "Installing dependencies..."
+            npm ci --omit=dev
+            
+            # Build the Next.js application on EC2
+            echo "Building Next.js application..."
+            NODE_ENV=production npm run build
+            
+            # Set proper permissions
+            sudo chown -R $USER:$USER $APP_DIR
+            
+            # Start the application with PM2
+            pm2 start npm --name "SAR-backend" -- start
+            pm2 save
+            
+            # Ensure PM2 starts on boot
+            pm2 startup || true
+            
+            echo "Deployment completed successfully"
+            echo "Environment file location: $ENV_FILE"
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.TEST_HOST }}
+          username: ${{ secrets.TEST_USERNAME }}
+          key: ${{ secrets.TEST_SSH_KEY }}
+          port: ${{ secrets.TEST_SSH_PORT || 22 }}
+          script: |
+            # Wait for application to start
+            sleep 10
+            
+            # Check if application is running
+            if pm2 list | grep -q "SAR-backend.*online"; then
+              echo "✅ Application is running successfully"
+              
+              # Optional: Test HTTP endpoint
+              if curl -f http://localhost:5001 > /dev/null 2>&1; then
+                echo "✅ Application health check passed"
+              else
+                echo "⚠️  Application started but health check failed"
+                exit 1
+              fi
+            else
+              echo "❌ Application failed to start"
+              pm2 logs "SAR-backend" --lines 20
+              exit 1
+            fi
