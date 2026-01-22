@@ -33,7 +33,7 @@ jobs:
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.TEST_HOST }}
-          username: ${{ secrets.TES_USERNAME }}
+          username: ${{ secrets.TEST_USERNAME }}
           key: ${{ secrets.TEST_SSH_KEY }}
           port: ${{ secrets.TEST_SSH_PORT || 22 }}
           command_timeout: 200m
