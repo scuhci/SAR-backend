@@ -32,6 +32,9 @@ const fetchList = async (collection, category, num, country) => {
         console.log(`[%s] App Title: %s\n`, file_name, result.title);
       }
 
+      if(!toplist)
+        throw new Error("Toplist is invalid");
+
       if(toplist.length > numAppsToFetch) {
         toplist = toplist.slice(0, numAppsToFetch)
       }
@@ -141,6 +144,10 @@ const fetchList = async (collection, category, num, country) => {
         // Implement store and country when applicable
         // Also, add additional options when applicable
         const logInfo_arr = Object.entries(logInfo);
+
+        if (!logInfo_arr)
+          throw new Error("log info is invalid");
+
         for (var i = 0; i < logInfo_arr.length; i++)
         {
           logInfo_arr[i] = logInfo_arr[i].join(': ');

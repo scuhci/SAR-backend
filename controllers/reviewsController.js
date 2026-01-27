@@ -80,6 +80,9 @@ const fetchReviews = async (appId, reviewsCount, countryCode) => {
             nextToken = result.nextPaginationToken;
         }
 
+        if (!reviews)
+          throw new Error ("Invalid reviews");
+        
         if (reviews.length > numReviews) {
             reviews = reviews.slice(0, numReviews);
         }
