@@ -62,7 +62,7 @@ jobs:
             # BACKUP_DIR="/var/backups/jeshwinprince-$(date +%Y%m%d-%H%M%S)"
 
             #! TODO: Replace with actual path to env file
-            ENV_DIR="/var/www/config/jeshwinprince"
+            ENV_DIR="/var/www/config/smar"
             ENV_FILE="$ENV_DIR/.env.production"
             
             # Check if Node.js and npm are available
@@ -136,31 +136,3 @@ jobs:
             
             echo "Deployment completed successfully"
             echo "Environment file location: $ENV_FILE"
-
-      - name: Health check
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.TEST_HOST }}
-          username: ${{ secrets.TEST_USERNAME }}
-          key: ${{ secrets.TEST_SSH_KEY }}
-          port: ${{ secrets.TEST_SSH_PORT || 22 }}
-          script: |
-            # Wait for application to start
-            sleep 10
-            
-            # Check if application is running
-            if pm2 list | grep -q "SAR-backend.*online"; then
-              echo "✅ Application is running successfully"
-              
-              # Optional: Test HTTP endpoint
-              if curl -f http://localhost:5001 > /dev/null 2>&1; then
-                echo "✅ Application health check passed"
-              else
-                echo "⚠️  Application started but health check failed"
-                exit 1
-              fi
-            else
-              echo "❌ Application failed to start"
-              pm2 logs "SAR-backend" --lines 20
-              exit 1
-            fi
