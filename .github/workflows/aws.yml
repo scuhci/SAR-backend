@@ -1,4 +1,4 @@
-name: Deploy Next.js to EC2
+name: Deploy Express.js to EC2
 
 on:
   push:
@@ -124,15 +124,11 @@ jobs:
             echo "Installing dependencies..."
             npm ci --omit=dev
             
-            # Build the Next.js application on EC2
-            echo "Building Next.js application..."
-            NODE_ENV=production npm run build
-            
             # Set proper permissions
             sudo chown -R $USER:$USER $APP_DIR
             
             # Start the application with PM2
-            pm2 start npm --name "SAR-backend" -- start
+            pm2 start index.js --name "SAR-backend"
             pm2 save
             
             # Ensure PM2 starts on boot
