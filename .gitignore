@@ -2,8 +2,7 @@ node_modules
 build
 .nyc
 .DS_Store
-search_results.csv
-package-lock.json
+# search_results.csv
 
 # Logs
 logs
