@@ -4,6 +4,7 @@ const permissionsRoute = require("./routes/permissionsRoute");
 const { downloadRelog, downloadCSV, addEmailNotification } = require("./controllers/searchController");
 const { scrapeReviews, downloadReviewsRelog } = require("./controllers/reviewsController");
 const { downloadTopChartsCSV, downloadTopChartsRelog, scrapeList } = require("./controllers/listController");
+const { startPeriodicHealthCheck, getHealthStatus, checkAllServices } = require("./utilities/healthCheck");
 
 const path = require("path");
 const app = express();
@@ -38,9 +39,39 @@ app.use("/toplists", scrapeList);
 app.use("/download-top-relog", downloadTopChartsRelog);
 app.use("/download-top-csv", downloadTopChartsCSV);
 
+// Basic liveness check endpoint (for load balancers)
+app.get("/health", (req, res) => {
+    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Detailed health check endpoint for scraper services
+app.get("/health/scraper", async (req, res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+
+    try {
+        // If 'refresh' query param is passed, run a fresh check
+        const healthStatus = req.query.refresh === "true" 
+            ? await checkAllServices() 
+            : getHealthStatus();
+
+        // Return 503 if unhealthy, 200 otherwise
+        const statusCode = healthStatus.overall === "unhealthy" ? 503 : 200;
+        res.status(statusCode).json(healthStatus);
+    } catch (error) {
+        console.error("[HEALTH] Error in health endpoint:", error.message);
+        res.status(500).json({
+            error: "Failed to retrieve health status",
+            message: error.message,
+        });
+    }
+});
+
 // Fallback
 app.get("/*", (req, res) => res.sendFile("/home/ubuntu/smar/sar-frontend/public/index.html"));
 
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
+
+    // Start periodic health check for scraper services
+    startPeriodicHealthCheck();
 });
