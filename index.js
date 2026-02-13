@@ -33,10 +33,8 @@ app.get('/health/scraper', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   
   try {
-    // If 'refresh' query param is passed, run a fresh check
-    const healthStatus = req.query.refresh === 'true' 
-      ? await checkAllServices() 
-      : getHealthStatus();
+    // Always run a live check against the scraper
+    const healthStatus = await checkAllServices();
     
     // Return 503 if unhealthy, 200 otherwise
     const statusCode = healthStatus.overall === 'unhealthy' ? 503 : 200;

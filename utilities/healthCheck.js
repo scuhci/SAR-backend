@@ -22,11 +22,11 @@ let healthStatus = {
   consecutiveFailures: 0,
   flaggedAt: null,
   services: {
-    search: { status: "unknown", lastError: null, responseTime: null },
-    app: { status: "unknown", lastError: null, responseTime: null },
-    similar: { status: "unknown", lastError: null, responseTime: null },
-    reviews: { status: "unknown", lastError: null, responseTime: null },
-    list: { status: "unknown", lastError: null, responseTime: null },
+    search: { status: "unknown", lastError: null, responseTime: null, resultCount: null },
+    app: { status: "unknown", lastError: null, responseTime: null, resultCount: null },
+    similar: { status: "unknown", lastError: null, responseTime: null, resultCount: null },
+    reviews: { status: "unknown", lastError: null, responseTime: null, resultCount: null },
+    list: { status: "unknown", lastError: null, responseTime: null, resultCount: null },
   },
 };
 
@@ -102,83 +102,124 @@ function withTimeout(promise, ms) {
 
 /**
  * Check search() function
+ * Validates: response is an array with at least 1 result
  */
 async function checkSearch() {
   const startTime = Date.now();
   try {
-    await withTimeout(
+    const results = await withTimeout(
       store.search({ term: TEST_CONFIG.searchTerm, country: TEST_CONFIG.country, num: 1 }),
       CHECK_TIMEOUT
     );
     const responseTime = Date.now() - startTime;
-    return { status: "up", lastError: null, responseTime };
+
+    // Validate result count - search should return an array with at least 1 result
+    if (!Array.isArray(results)) {
+      return { status: "down", lastError: "Invalid response: expected an array", responseTime, resultCount: 0 };
+    }
+    if (results.length === 0) {
+      return { status: "down", lastError: "Empty results: search returned 0 results", responseTime, resultCount: 0 };
+    }
+
+    return { status: "up", lastError: null, responseTime, resultCount: results.length };
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    return { status: "down", lastError: error.message, responseTime };
+    return { status: "down", lastError: error.message, responseTime, resultCount: 0 };
   }
 }
 
 /**
  * Check app() function
+ * Validates: response is an object with expected fields (title, appId)
  */
 async function checkApp() {
   const startTime = Date.now();
   try {
-    await withTimeout(
+    const result = await withTimeout(
       store.app({ id: TEST_CONFIG.appId, country: TEST_CONFIG.country }),
       CHECK_TIMEOUT
     );
     const responseTime = Date.now() - startTime;
-    return { status: "up", lastError: null, responseTime };
+
+    // Validate content - app() should return an object with key fields
+    if (!result || typeof result !== "object") {
+      return { status: "down", lastError: "Invalid response: expected an app object", responseTime, resultCount: 0 };
+    }
+    if (!result.title || !result.appId) {
+      return { status: "down", lastError: "Invalid response: missing expected fields (title, appId)", responseTime, resultCount: 0 };
+    }
+
+    return { status: "up", lastError: null, responseTime, resultCount: 1 };
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    return { status: "down", lastError: error.message, responseTime };
+    return { status: "down", lastError: error.message, responseTime, resultCount: 0 };
   }
 }
 
 /**
  * Check similar() function
+ * Validates: response is an array with at least 1 similar app
  */
 async function checkSimilar() {
   const startTime = Date.now();
   try {
-    await withTimeout(
+    const results = await withTimeout(
       store.similar({ id: TEST_CONFIG.appId, country: TEST_CONFIG.country }),
       CHECK_TIMEOUT
     );
     const responseTime = Date.now() - startTime;
-    return { status: "up", lastError: null, responseTime };
+
+    // Validate result count - similar() should return an array with at least 1 result
+    if (!Array.isArray(results)) {
+      return { status: "down", lastError: "Invalid response: expected an array", responseTime, resultCount: 0 };
+    }
+    if (results.length === 0) {
+      return { status: "down", lastError: "Empty results: similar returned 0 apps", responseTime, resultCount: 0 };
+    }
+
+    return { status: "up", lastError: null, responseTime, resultCount: results.length };
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    return { status: "down", lastError: error.message, responseTime };
+    return { status: "down", lastError: error.message, responseTime, resultCount: 0 };
   }
 }
 
 /**
  * Check reviews() function
+ * Validates: response is an array with at least 1 review
  */
 async function checkReviews() {
   const startTime = Date.now();
   try {
-    await withTimeout(
+    const results = await withTimeout(
       store.reviews({ id: TEST_CONFIG.appId, country: TEST_CONFIG.country, page: 1 }),
       CHECK_TIMEOUT
     );
     const responseTime = Date.now() - startTime;
-    return { status: "up", lastError: null, responseTime };
+
+    // Validate result count - reviews() should return an array with at least 1 review
+    if (!Array.isArray(results)) {
+      return { status: "down", lastError: "Invalid response: expected an array", responseTime, resultCount: 0 };
+    }
+    if (results.length === 0) {
+      return { status: "down", lastError: "Empty results: reviews returned 0 reviews", responseTime, resultCount: 0 };
+    }
+
+    return { status: "up", lastError: null, responseTime, resultCount: results.length };
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    return { status: "down", lastError: error.message, responseTime };
+    return { status: "down", lastError: error.message, responseTime, resultCount: 0 };
   }
 }
 
 /**
  * Check list() function
+ * Validates: response is an array with at least 1 app in the chart
  */
 async function checkList() {
   const startTime = Date.now();
   try {
-    await withTimeout(
+    const results = await withTimeout(
       store.list({
         collection: TEST_CONFIG.collection,
         category: TEST_CONFIG.category,
@@ -188,10 +229,19 @@ async function checkList() {
       CHECK_TIMEOUT
     );
     const responseTime = Date.now() - startTime;
-    return { status: "up", lastError: null, responseTime };
+
+    // Validate result count - list() should return an array with at least 1 app
+    if (!Array.isArray(results)) {
+      return { status: "down", lastError: "Invalid response: expected an array", responseTime, resultCount: 0 };
+    }
+    if (results.length === 0) {
+      return { status: "down", lastError: "Empty results: list returned 0 apps", responseTime, resultCount: 0 };
+    }
+
+    return { status: "up", lastError: null, responseTime, resultCount: results.length };
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    return { status: "down", lastError: error.message, responseTime };
+    return { status: "down", lastError: error.message, responseTime, resultCount: 0 };
   }
 }
 
@@ -220,10 +270,10 @@ function logHealthStatus(services, overall) {
 
   for (const [serviceName, serviceStatus] of Object.entries(services)) {
     if (serviceStatus.status === "up") {
-      console.log(`[HEALTH] ${serviceName}: UP (${serviceStatus.responseTime}ms)`);
+      console.log(`[HEALTH] ${serviceName}: UP (${serviceStatus.responseTime}ms, ${serviceStatus.resultCount} result(s))`);
     } else {
       console.log(
-        `[HEALTH] ${serviceName}: DOWN - Error: ${serviceStatus.lastError}`
+        `[HEALTH] ${serviceName}: DOWN (${serviceStatus.resultCount} result(s)) - Error: ${serviceStatus.lastError}`
       );
     }
   }
