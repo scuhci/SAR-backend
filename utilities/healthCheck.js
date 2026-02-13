@@ -107,11 +107,17 @@ function withTimeout(promise, ms) {
 async function checkSearch() {
   const startTime = Date.now();
   try {
-    await withTimeout(
+    const results = await withTimeout(
       gplay.search({ term: TEST_CONFIG.searchTerm, country: TEST_CONFIG.country, num: 1 }),
       CHECK_TIMEOUT
     );
     const responseTime = Date.now() - startTime;
+
+    // Validate that we actually got results back
+    if (!Array.isArray(results) || results.length === 0) {
+      return { status: "down", lastError: "Empty or invalid response (expected at least 1 search result)", responseTime };
+    }
+
     return { status: "up", lastError: null, responseTime };
   } catch (error) {
     const responseTime = Date.now() - startTime;
@@ -125,11 +131,17 @@ async function checkSearch() {
 async function checkApp() {
   const startTime = Date.now();
   try {
-    await withTimeout(
+    const result = await withTimeout(
       gplay.app({ appId: TEST_CONFIG.appId, country: TEST_CONFIG.country }),
       CHECK_TIMEOUT
     );
     const responseTime = Date.now() - startTime;
+
+    // Validate that we got a valid app object with expected fields
+    if (!result || !result.appId || !result.title) {
+      return { status: "down", lastError: "Empty or invalid response (missing appId or title)", responseTime };
+    }
+
     return { status: "up", lastError: null, responseTime };
   } catch (error) {
     const responseTime = Date.now() - startTime;
@@ -143,7 +155,7 @@ async function checkApp() {
 async function checkReviews() {
   const startTime = Date.now();
   try {
-    await withTimeout(
+    const result = await withTimeout(
       gplay.reviews({
         appId: TEST_CONFIG.appId,
         country: TEST_CONFIG.country,
@@ -154,6 +166,12 @@ async function checkReviews() {
       CHECK_TIMEOUT
     );
     const responseTime = Date.now() - startTime;
+
+    // Validate that we got a response with a data array containing at least 1 review
+    if (!result || !Array.isArray(result.data) || result.data.length === 0) {
+      return { status: "down", lastError: "Empty or invalid response (expected at least 1 review)", responseTime };
+    }
+
     return { status: "up", lastError: null, responseTime };
   } catch (error) {
     const responseTime = Date.now() - startTime;
@@ -167,7 +185,7 @@ async function checkReviews() {
 async function checkList() {
   const startTime = Date.now();
   try {
-    await withTimeout(
+    const results = await withTimeout(
       gplay.list({
         collection: TEST_CONFIG.collection,
         category: TEST_CONFIG.category,
@@ -179,6 +197,12 @@ async function checkList() {
       CHECK_TIMEOUT
     );
     const responseTime = Date.now() - startTime;
+
+    // Validate that we got a non-empty list back
+    if (!Array.isArray(results) || results.length === 0) {
+      return { status: "down", lastError: "Empty or invalid response (expected at least 1 list entry)", responseTime };
+    }
+
     return { status: "up", lastError: null, responseTime };
   } catch (error) {
     const responseTime = Date.now() - startTime;
@@ -192,7 +216,7 @@ async function checkList() {
 async function checkPermissions() {
   const startTime = Date.now();
   try {
-    await withTimeout(
+    const results = await withTimeout(
       gplay.permissions({
         appId: TEST_CONFIG.appId,
         country: TEST_CONFIG.country,
@@ -201,6 +225,12 @@ async function checkPermissions() {
       CHECK_TIMEOUT
     );
     const responseTime = Date.now() - startTime;
+
+    // Validate that we got a non-empty permissions array back
+    if (!Array.isArray(results) || results.length === 0) {
+      return { status: "down", lastError: "Empty or invalid response (expected at least 1 permission entry)", responseTime };
+    }
+
     return { status: "up", lastError: null, responseTime };
   } catch (error) {
     const responseTime = Date.now() - startTime;
