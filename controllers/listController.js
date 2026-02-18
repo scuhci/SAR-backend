@@ -56,7 +56,15 @@ const fetchList = async (collection, category, num, country) => {
       // Fetch top list based on the count or the maximum limit
       const toplist = await fetchList(collection, category, num, country);
       console.log(`Scraped Top ${toplist.length} Apps for ${collection} and ${category}`);
-      
+
+      if (!toplist || !Array.isArray(toplist) || toplist.length === 0) {
+        console.log("No results returned from fetchList");
+        return res.json({
+          totalCount: 0,
+          results: []
+        });
+      }
+    
       const cleanedTopListResults = toplist.map(
         (result) => {
           // Clean the summary column
