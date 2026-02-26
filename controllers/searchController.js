@@ -99,7 +99,7 @@ const searchController = async (req, res) => {
                     ...result,
                     country: country,
                     source: "related app",
-                }))
+                })),
             ),
         ];
 
@@ -122,7 +122,7 @@ const searchController = async (req, res) => {
                     console.error("Error fetching app details:", error);
                     return null;
                 }
-            })
+            }),
         );
 
         // Filter out apps with missing details
@@ -149,7 +149,7 @@ const searchController = async (req, res) => {
         console.log(
             "[%s] [%d] results shown on SMAR Website:\n-------------------------\n",
             file_name,
-            resultsWithSimilarityScore.length
+            resultsWithSimilarityScore.length,
         );
         for (const result of resultsWithSimilarityScore) {
             console.log("[%s] Title: %s, Similarity Score: %d\n", file_name, result.title, result.similarityScore);
@@ -186,7 +186,7 @@ const searchController = async (req, res) => {
                     permission: permission,
                     // type: permission.type,
                     isPermissionRequired: appInfo.permissions.some(
-                        (appPermission) => appPermission.permission === permission
+                        (appPermission) => appPermission.permission === permission,
                     )
                         ? true
                         : false,
@@ -206,7 +206,7 @@ const searchController = async (req, res) => {
         console.log(
             "[%s] [%d] entries to be forwarded to CSV:\n-------------------------\n",
             file_name,
-            csvData.length
+            csvData.length,
         );
         for (const result of csvData) {
             console.log("[%s] %s\n", file_name, result.title);
@@ -336,14 +336,14 @@ const searchController = async (req, res) => {
                             ],
                         },
                         (error) => {
-                            if (error) console.log("Error:", error);
-                        }
+                            if (error) console.log("Email Error:", error);
+                        },
                     );
 
-                    // console.log("Email Sent");
+                    console.log("Email Sent");
                     delete emailMappings[pushQuery];
                 } catch (e) {
-                    console.log(e);
+                    console.log("Error sending emails: ", e);
                 }
             })();
         }

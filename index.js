@@ -6,6 +6,7 @@ const { scrapeReviews, downloadReviewsRelog } = require("./controllers/reviewsCo
 const { downloadTopChartsCSV, downloadTopChartsRelog, scrapeList } = require("./controllers/listController");
 
 const path = require("path");
+const searchController = require("./controllers/searchController");
 const app = express();
 const port = 5001;
 
@@ -29,6 +30,7 @@ app.use("/permissions", permissionsRoute);
 app.use("/reviews", scrapeReviews);
 app.use("/download-csv", downloadCSV);
 app.use("/download-relog", downloadRelog);
+app.post("/email", searchController.addEmailNotification);
 
 // Bulk reviews relog
 app.use("/download-reviews-relog", downloadReviewsRelog);
