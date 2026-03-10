@@ -18,6 +18,6 @@ router.get("/download-csv", searchController.downloadCSV);
 router.get("/download-relog", searchController.downloadRelog);
 
 // Notifications endpoint
-router.put("/email", searchController.addEmailNotification);
+router.post("/email", searchController.addEmailNotification);
 
 module.exports = router;
