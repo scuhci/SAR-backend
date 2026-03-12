@@ -43,14 +43,6 @@ function calculateResultSimilarityScore(result) {
   return result;
 }
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_PASS,
-  },
-});
-
 const searchController = async (req, res) => {
   const query = req.query.query;
   const permissions = req.query.includePermissions === "true";
@@ -253,6 +245,14 @@ const searchController = async (req, res) => {
       const userEmails = emailMappings[pushQuery];
       (async () => {
         try {
+          const transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+              user: process.env.GMAIL_USER,
+              pass: process.env.GMAIL_PASS,
+            },
+          });
+          
           // generate the CSV to send back, similar to the downloadCSV option
           const csv = jsonToCsv(
             csvData,
