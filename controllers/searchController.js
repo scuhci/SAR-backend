@@ -252,7 +252,7 @@ const searchController = async (req, res) => {
               pass: process.env.GMAIL_PASS,
             },
           });
-          
+
           // generate the CSV to send back, similar to the downloadCSV option
           const csv = jsonToCsv(
             csvData,
@@ -333,14 +333,6 @@ const searchController = async (req, res) => {
                                   </p>
                               </div>
                           </div>
-                          
-                          <!-- CTA Button -->
-                          <div style="text-align: center; margin: 30px 0;">
-                              <a href="https://www.smar-tool.org" 
-                                style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; padding: 15px 30px; border-radius: 25px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
-                                  Visit SMAR Tool 🚀
-                              </a>
-                          </div>
                       </div>
                       
                       <!-- Footer -->
@@ -352,7 +344,7 @@ const searchController = async (req, res) => {
                               </p>
                               <div style="margin-top: 15px;">
                                   <span style="color: #ccc; font-size: 12px;">
-                                      © ${new Date().getFullYear()} SMAR Team
+                                      © ${new Date().getFullYear()} The HCI Lab at SCU
                                   </span>
                               </div>
                           </div>
