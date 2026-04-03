@@ -1,4 +1,6 @@
+require("dotenv").config();
 const store = require("app-store-scraper");
+const nodemailer = require("nodemailer");
 
 // Test data - using Instagram as a stable, popular app
 const TEST_CONFIG = {
@@ -43,51 +45,244 @@ let flaggedAt = null;
 // Interval timer reference for graceful shutdown
 let healthCheckInterval = null;
 
+// Dev team emails to notify on health events — add addresses to ALERT_EMAILS in .env (comma-separated)
+const ALERT_EMAILS = process.env.ALERT_EMAILS
+  ? process.env.ALERT_EMAILS.split(",").map((e) => e.trim())
+  : [];
+
 /**
- * Placeholder action to execute when health check failures are flagged
- * TODO: Implement actual alerting mechanism (e.g., email, Slack, PagerDuty)
- * 
- * @param {Object} healthStatus - Current health status object
+ * Create a reusable nodemailer transporter using Gmail credentials from env
  */
-function onHealthFlagged(healthStatus) {
-  console.log("============================================");
-  console.log("[HEALTH] ACTION REQUIRED - SCRAPER ISSUES DETECTED");
-  console.log("============================================");
-  console.log(`[HEALTH] Flagged at: ${healthStatus.flaggedAt}`);
-  console.log(`[HEALTH] Consecutive failures: ${healthStatus.consecutiveFailures}`);
-  console.log(`[HEALTH] Overall status: ${healthStatus.overall}`);
-  console.log("[HEALTH] Affected services:");
-  
-  for (const [serviceName, serviceStatus] of Object.entries(healthStatus.services)) {
-    if (serviceStatus.status === "down") {
-      console.log(`[HEALTH]   - ${serviceName}: ${serviceStatus.lastError}`);
-    }
-  }
-  
-  console.log("============================================");
-  console.log("[HEALTH] TODO: Add notification logic here");
-  console.log("[HEALTH]   - Send email alert");
-  console.log("[HEALTH]   - Send Slack notification");
-  console.log("[HEALTH]   - Trigger PagerDuty incident");
-  console.log("[HEALTH]   - Update status page");
-  console.log("============================================");
+function createTransporter() {
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_PASS,
+    },
+  });
 }
 
 /**
- * Placeholder action to execute when health is restored after being flagged
- * TODO: Implement actual recovery notification
- * 
- * @param {Object} healthStatus - Current health status object
+ * Send health alert email to the dev team when scraper failures are flagged
+ *
+ * @param {Object} status - Current health status object
  */
-function onHealthRestored(healthStatus) {
+async function onHealthFlagged(status) {
+  console.log("============================================");
+  console.log("[HEALTH] ACTION REQUIRED - SCRAPER ISSUES DETECTED");
+  console.log("============================================");
+  console.log(`[HEALTH] Flagged at: ${status.flaggedAt}`);
+  console.log(`[HEALTH] Consecutive failures: ${status.consecutiveFailures}`);
+  console.log(`[HEALTH] Overall status: ${status.overall}`);
+  console.log("[HEALTH] Affected services:");
+
+  const downServices = [];
+  for (const [serviceName, serviceStatus] of Object.entries(status.services)) {
+    if (serviceStatus.status === "down") {
+      console.log(`[HEALTH]   - ${serviceName}: ${serviceStatus.lastError}`);
+      downServices.push({ name: serviceName, error: serviceStatus.lastError });
+    }
+  }
+  console.log("============================================");
+
+  if (ALERT_EMAILS.length === 0) {
+    console.log("[HEALTH] No ALERT_EMAILS configured — skipping email notification.");
+    return;
+  }
+
+  const downRows = downServices
+    .map(
+      (s) => `
+      <tr>
+        <td style="padding: 8px 12px; border-bottom: 1px solid #e9ecef; font-weight: 600; color: #c0392b;">${s.name}</td>
+        <td style="padding: 8px 12px; border-bottom: 1px solid #e9ecef; color: #666; font-size: 13px;">${s.error || "Unknown error"}</td>
+      </tr>`
+    )
+    .join("");
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>SMAR Tool - Scraper Alert</title>
+    </head>
+    <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); padding: 30px 20px; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 300;">
+            SMAR Tool — Scraper Alert
+          </h1>
+          <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">
+            Action Required: iOS Scraper Issues Detected
+          </p>
+        </div>
+
+        <!-- Content -->
+        <div style="padding: 40px 30px;">
+          <div style="background-color: #fff3f3; border-left: 4px solid #e74c3c; border-radius: 4px; padding: 20px; margin-bottom: 30px;">
+            <p style="margin: 0; color: #c0392b; font-size: 15px; line-height: 1.6;">
+              The scraper health monitor has flagged repeated failures after
+              <strong>${status.consecutiveFailures} consecutive checks</strong>.
+              The overall status is <strong>${status.overall.toUpperCase()}</strong>.
+            </p>
+          </div>
+
+          <h3 style="color: #333; margin: 0 0 12px 0;">Incident Details</h3>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 14px;">
+            <tr style="background-color: #f8f9fa;">
+              <td style="padding: 8px 12px; font-weight: 600; color: #555; width: 40%;">Flagged At</td>
+              <td style="padding: 8px 12px; color: #333;">${status.flaggedAt}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 12px; font-weight: 600; color: #555;">Overall Status</td>
+              <td style="padding: 8px 12px; color: #c0392b; font-weight: 600;">${status.overall.toUpperCase()}</td>
+            </tr>
+            <tr style="background-color: #f8f9fa;">
+              <td style="padding: 8px 12px; font-weight: 600; color: #555;">Consecutive Failures</td>
+              <td style="padding: 8px 12px; color: #333;">${status.consecutiveFailures}</td>
+            </tr>
+          </table>
+
+          <h3 style="color: #333; margin: 0 0 12px 0;">Affected Services</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 30px;">
+            <thead>
+              <tr style="background-color: #f8f9fa;">
+                <th style="padding: 10px 12px; text-align: left; color: #555; font-weight: 600; border-bottom: 2px solid #dee2e6;">Service</th>
+                <th style="padding: 10px 12px; text-align: left; color: #555; font-weight: 600; border-bottom: 2px solid #dee2e6;">Error</th>
+              </tr>
+            </thead>
+            <tbody>${downRows}</tbody>
+          </table>
+
+          <p style="color: #666; font-size: 14px; line-height: 1.6;">
+            Please investigate whether the iOS App Store scraper is being rate-limited or blocked.
+            Check server logs for more details.
+          </p>
+        </div>
+
+        <!-- Footer -->
+        <div style="background-color: #f8f9fa; padding: 20px 30px; border-top: 1px solid #e9ecef; text-align: center;">
+          <p style="color: #999; font-size: 12px; margin: 0; line-height: 1.5;">
+            This is an automated alert from the SMAR Tool health monitor.<br>
+            <a href="https://www.smar-tool.org" style="color: #667eea;">www.smar-tool.org</a>
+          </p>
+          <div style="margin-top: 10px;">
+            <span style="color: #ccc; font-size: 12px;">© ${new Date().getFullYear()} The HCI Lab at SCU</span>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>`;
+
+  try {
+    const transporter = createTransporter();
+    for (const email of ALERT_EMAILS) {
+      await transporter.sendMail({
+        from: '"SMAR Tool Health Monitor" <smar-tool@googlegroups.com>',
+        to: email,
+        subject: "[SMAR Tool] ACTION REQUIRED: iOS Scraper Issues Detected",
+        text: `SMAR Tool Scraper Alert\n\nThe scraper has been flagged after ${status.consecutiveFailures} consecutive failures.\nOverall status: ${status.overall.toUpperCase()}\nFlagged at: ${status.flaggedAt}\n\nAffected services:\n${downServices.map((s) => `- ${s.name}: ${s.error}`).join("\n")}\n\nPlease investigate the server logs.`,
+        html: htmlContent,
+      });
+      console.log(`[HEALTH] Alert email sent to ${email}`);
+    }
+  } catch (error) {
+    console.error("[HEALTH] Failed to send alert email:", error.message);
+  }
+}
+
+/**
+ * Send recovery email to the dev team when health is restored after being flagged
+ *
+ * @param {Object} status - Current health status object
+ */
+async function onHealthRestored(status) {
   console.log("============================================");
   console.log("[HEALTH] RESOLVED - SCRAPER HEALTH RESTORED");
   console.log("============================================");
-  console.log(`[HEALTH] Restored at: ${healthStatus.lastCheck}`);
-  console.log(`[HEALTH] All services operational`);
+  console.log(`[HEALTH] Restored at: ${status.lastCheck}`);
+  console.log("[HEALTH] All services operational");
   console.log("============================================");
-  console.log("[HEALTH] TODO: Add recovery notification logic here");
-  console.log("============================================");
+
+  if (ALERT_EMAILS.length === 0) {
+    console.log("[HEALTH] No ALERT_EMAILS configured — skipping recovery email.");
+    return;
+  }
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>SMAR Tool - Scraper Recovered</title>
+    </head>
+    <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%); padding: 30px 20px; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 300;">
+            SMAR Tool — Scraper Recovered
+          </h1>
+          <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">
+            All services are back online
+          </p>
+        </div>
+
+        <!-- Content -->
+        <div style="padding: 40px 30px;">
+          <div style="background-color: #f0fff4; border-left: 4px solid #27ae60; border-radius: 4px; padding: 20px; margin-bottom: 30px;">
+            <p style="margin: 0; color: #1e8449; font-size: 15px; line-height: 1.6;">
+              The iOS scraper has recovered and all services are
+              <strong>healthy</strong>. No further action is required.
+            </p>
+          </div>
+
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 30px;">
+            <tr style="background-color: #f8f9fa;">
+              <td style="padding: 8px 12px; font-weight: 600; color: #555; width: 40%;">Restored At</td>
+              <td style="padding: 8px 12px; color: #333;">${status.lastCheck}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 12px; font-weight: 600; color: #555;">Current Status</td>
+              <td style="padding: 8px 12px; color: #27ae60; font-weight: 600;">HEALTHY</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Footer -->
+        <div style="background-color: #f8f9fa; padding: 20px 30px; border-top: 1px solid #e9ecef; text-align: center;">
+          <p style="color: #999; font-size: 12px; margin: 0; line-height: 1.5;">
+            This is an automated alert from the SMAR Tool health monitor.<br>
+            <a href="https://www.smar-tool.org" style="color: #667eea;">www.smar-tool.org</a>
+          </p>
+          <div style="margin-top: 10px;">
+            <span style="color: #ccc; font-size: 12px;">© ${new Date().getFullYear()} The HCI Lab at SCU</span>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>`;
+
+  try {
+    const transporter = createTransporter();
+    for (const email of ALERT_EMAILS) {
+      await transporter.sendMail({
+        from: '"SMAR Tool Health Monitor" <smar-tool@googlegroups.com>',
+        to: email,
+        subject: "[SMAR Tool] RESOLVED: iOS Scraper Health Restored",
+        text: `SMAR Tool Scraper Recovery\n\nThe scraper health has been restored. All services are now healthy.\nRestored at: ${status.lastCheck}\n\nNo further action is required.`,
+        html: htmlContent,
+      });
+      console.log(`[HEALTH] Recovery email sent to ${email}`);
+    }
+  } catch (error) {
+    console.error("[HEALTH] Failed to send recovery email:", error.message);
+  }
 }
 
 /**
@@ -324,8 +519,8 @@ async function checkAllServices() {
       console.log(`[HEALTH] ⚠️  Flagged at: ${flaggedAt}`);
       console.log(`[HEALTH] ⚠️  Action required: External iOS scraper may be experiencing issues.`);
       
-      // Execute placeholder action for flagged state
-      onHealthFlagged({
+      // Send alert email to dev team
+      await onHealthFlagged({
         lastCheck: new Date().toISOString(),
         overall,
         flagged: true,
@@ -345,8 +540,8 @@ async function checkAllServices() {
     if (isFlagged) {
       console.log(`[HEALTH] ✓ Flag cleared: Scraper health restored to healthy state.`);
       
-      // Execute placeholder action for restored state
-      onHealthRestored({
+      // Send recovery email to dev team
+      await onHealthRestored({
         lastCheck: new Date().toISOString(),
         overall,
         flagged: false,
