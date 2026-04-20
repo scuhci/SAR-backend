@@ -35,11 +35,17 @@ app.post("/email", searchController.addEmailNotification);
 
 // Bulk reviews relog
 app.use("/download-reviews-relog", downloadReviewsRelog);
+app.use("/api/download-reviews-relog", downloadReviewsRelog);
 
 // Top lists
 app.use("/toplists", scrapeList);
 app.use("/download-top-relog", downloadTopChartsRelog);
 app.use("/download-top-csv", downloadTopChartsCSV);
+
+// Top lists (via /api prefix, as called by the frontend)
+app.use("/api/toplists", scrapeList);
+app.use("/api/download-top-relog", downloadTopChartsRelog);
+app.use("/api/download-top-csv", downloadTopChartsCSV);
 
 // Basic liveness check endpoint (for load balancers)
 app.get("/health", (req, res) => {
