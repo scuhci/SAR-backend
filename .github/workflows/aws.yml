@@ -102,7 +102,7 @@ jobs:
             # fi
             
             # Stop the application (assuming PM2)
-            pm2 stop "SAR-backend" || echo "App not running"
+            pm2 stop "SMAR-ios-backend" || echo "App not running"
             
             # Create application directory
             sudo mkdir -p $APP_DIR
