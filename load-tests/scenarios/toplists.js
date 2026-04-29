@@ -1,14 +1,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
-// Confirmed working params (verified via Postman):
-//   collection : TOP_FREE | TOP_PAID | GROSSING
-//   category   : empty string '' for all categories, or a specific category code
-//   country    : lowercase country code e.g. 'us'
-//   num        : number of results (keep small e.g. 5-50 to avoid Google rate limiting)
-
 export const options = {
-  // Override with K6_VUS and K6_DURATION while running.
   vus: __ENV.K6_VUS ? parseInt(__ENV.K6_VUS, 10) : 1,
   duration: __ENV.K6_DURATION || '3m',
 };

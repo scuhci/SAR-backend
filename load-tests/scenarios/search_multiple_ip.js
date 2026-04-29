@@ -1,52 +1,47 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import { SharedArray } from 'k6/data';
 
-// Add as many proxies as you have available
-const PROXIES = [
-  'http://proxy1:port',
-  'http://proxy2:port',
-  'http://proxy3:port',
-  // ...
+const queryData = new SharedArray('search queries', function () {
+  return ['instagram', 'whatsapp', 'facebook', 'tiktok', 'snapchat', 'telegram'];
+});
+
+const localIPs = [
+  '192.168.1.10',
+  '192.168.1.11',
+  '192.168.1.12'
 ];
 
 export const options = {
-  vus: __ENV.K6_VUS ? parseInt(__ENV.K6_VUS, 10) : 1,
-  duration: __ENV.K6_DURATION || '3m',
+  vus: __ENV.K6_VUS ? parseInt(__ENV.K6_VUS, 10) : 3,
+  duration: __ENV.K6_DURATION || '1m',
 };
 
 export default function () {
   const baseUrl = (__ENV.BASE_URL || 'http://localhost:5001').replace(/\/$/, '');
-  const searchPath = __ENV.SEARCH_PATH || '/api/search';
-  const query = __ENV.QUERY || 'instagram';
-  const countryCode = __ENV.COUNTRY_CODE || 'US';
-  const includePermissions = __ENV.INCLUDE_PERMISSIONS || 'false';
-  const requestTimeout = __ENV.K6_TIMEOUT || '300s';
-  const pauseSeconds = __ENV.SLEEP_SECONDS ? Number(__ENV.SLEEP_SECONDS) : 1;
+  
+  const query = queryData[(__VU - 1) % queryData.length];
+  const sourceIp = localIPs[(__VU - 1) % localIPs.length];
 
-  // Each VU picks a proxy based on its ID so they're spread across proxies
-  const proxy = PROXIES[(__VU - 1) % PROXIES.length];
+  const url = `${baseUrl}/api/search?query=${encodeURIComponent(query)}&countryCode=US`;
 
-  const url =
-    `${baseUrl}${searchPath}` +
-    `?query=${encodeURIComponent(query)}` +
-    `&countryCode=${encodeURIComponent(countryCode)}` +
-    `&includePermissions=${encodeURIComponent(includePermissions)}` +
-    `&time=${encodeURIComponent(new Date().toISOString())}`;
+  console.log(`VU ${__VU} (IP: ${sourceIp}) searching for: ${query}`);
 
-  const res = http.get(url, {
-    timeout: requestTimeout,
-    tags: { service: 'gplay', endpoint: searchPath },
-    // Route this VU's traffic through its assigned proxy
-    headers: {},
-    // k6 proxy option:
-    proxy: proxy,
-  });
+  const params = {
+    timeout: '300s',
+    localAddress: sourceIp,
+    tags: { 
+        service: 'gplay', 
+        source_ip: sourceIp 
+    },
+  };
+
+  const res = http.get(url, params);
 
   check(res, {
     'status is 200': (r) => r.status === 200,
     'body is non-empty': (r) => Boolean(r.body && r.body.length > 0),
-    'no rate limit': (r) => r.status !== 429,
   });
 
-  sleep(pauseSeconds);
+  sleep(1);
 }
