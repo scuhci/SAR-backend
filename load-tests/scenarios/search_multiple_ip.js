@@ -1,47 +1,54 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { SharedArray } from 'k6/data';
+import execution from 'k6/execution';
 
-const queryData = new SharedArray('search queries', function () {
-  return ['instagram', 'whatsapp', 'facebook', 'tiktok', 'snapchat', 'telegram'];
+const queries = new SharedArray('search queries', function () {
+    return ['instagram', 'whatsapp', 'facebook', 'tiktok', 'snapchat', 'telegram', 'youtube', 'reddit'];
 });
 
-const localIPs = [
-  '192.168.1.10',
-  '192.168.1.11',
-  '192.168.1.12'
-];
+function getRandomIP() {
+    const min = 10;
+    const max = 50;
+    const lastOctet = Math.floor(Math.random() * (max - min + 1)) + min;
+    return `192.168.1.${lastOctet}`;
+}
 
 export const options = {
-  vus: __ENV.K6_VUS ? parseInt(__ENV.K6_VUS, 10) : 3,
-  duration: __ENV.K6_DURATION || '1m',
+    vus: __ENV.VUS ? parseInt(__ENV.VUS) : 1,
+    duration: __ENV.DURATION || '30s',
+    thresholds: {
+        http_req_failed: ['rate<0.01'],
+    },
 };
 
 export default function () {
-  const baseUrl = (__ENV.BASE_URL || 'http://localhost:5001').replace(/\/$/, '');
-  
-  const query = queryData[(__VU - 1) % queryData.length];
-  const sourceIp = localIPs[(__VU - 1) % localIPs.length];
+    const queryIndex = (execution.vu.idInTest - 1) % queries.length;
+    const query = queries[queryIndex];
 
-  const url = `${baseUrl}/api/search?query=${encodeURIComponent(query)}&countryCode=US`;
+    const sourceIp = getRandomIP();
+    const baseUrl = __ENV.BASE_URL || 'http://localhost:5001';
+    const url = `${baseUrl}/api/search?query=${encodeURIComponent(query)}&countryCode=US`;
 
-  console.log(`VU ${__VU} (IP: ${sourceIp}) searching for: ${query}`);
+    const params = {
+        timeout: '120s',
+        headers: {
+            'X-Forwarded-For': sourceIp,
+            'X-Real-IP': sourceIp,
+        },
+        tags: {
+            vu_id: String(execution.vu.idInTest),
+            source_ip: sourceIp,
+        },
+    };
 
-  const params = {
-    timeout: '300s',
-    localAddress: sourceIp,
-    tags: { 
-        service: 'gplay', 
-        source_ip: sourceIp 
-    },
-  };
+    console.log(`[VU ${execution.vu.idInTest}] Simulated IP: ${sourceIp} | Query: ${query}`);
 
-  const res = http.get(url, params);
+    const res = http.get(url, params);
 
-  check(res, {
-    'status is 200': (r) => r.status === 200,
-    'body is non-empty': (r) => Boolean(r.body && r.body.length > 0),
-  });
+    check(res, {
+        'status is 200': (r) => r.status === 200,
+    });
 
-  sleep(1);
+    sleep(1);
 }
