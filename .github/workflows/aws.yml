@@ -125,7 +125,7 @@ jobs:
             fi
             
             # Stop the application (assuming PM2)
-            pm2 stop "SAR-backend" || echo "App not running"
+            pm2 stop "gplay-backend" || echo "App not running"
             
             # Create application directory
             sudo mkdir -p $APP_DIR
@@ -151,7 +151,7 @@ jobs:
             sudo chown -R $USER:$USER $APP_DIR
             
             # Start the application with PM2
-            pm2 start index.js --name "SAR-backend"
+            pm2 start index.js --name "gplay-backend"
             pm2 save
 
             # Ensure PM2 starts on boot
@@ -183,14 +183,14 @@ jobs:
               exit 0
             fi
 
-            echo "----- Last 50 PM2 log lines for SAR-backend -----"
-            pm2 logs SAR-backend --lines 50 --nostream || true
+            echo "----- Last 50 PM2 log lines for gplay-backend -----"
+            pm2 logs gplay-backend --lines 50 --nostream || true
 
             if [ -d "$BACKUP_DIR" ]; then
               echo ""
               echo "=== Auto-rolling back to $BACKUP_DIR ==="
-              pm2 stop "SAR-backend" || true
-              pm2 delete "SAR-backend" || true
+              pm2 stop "gplay-backend" || true
+              pm2 delete "gplay-backend" || true
               sudo rm -rf "$APP_DIR"
               sudo mkdir -p "$APP_DIR"
               sudo cp -r "$BACKUP_DIR/." "$APP_DIR/"
@@ -199,7 +199,7 @@ jobs:
               # captured a stale env or had it as a regular file.
               ln -sf "$ENV_FILE" "$APP_DIR/.env.production"
               cd "$APP_DIR"
-              pm2 start index.js --name "SAR-backend"
+              pm2 start index.js --name "gplay-backend"
               pm2 save
 
               if run_smoke_test "post-rollback"; then
