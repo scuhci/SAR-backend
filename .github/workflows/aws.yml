@@ -2,7 +2,7 @@ name: Deploy Express.js to EC2
 
 on:
   push:
-    branches: [gplay-test]
+    branches: [gplay-production]
   workflow_dispatch: # Allows manual triggering
 
 jobs:
@@ -32,10 +32,10 @@ jobs:
       - name: Upload source code to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.TEST_HOST }}
-          username: ${{ secrets.TEST_USERNAME }}
-          key: ${{ secrets.TEST_SSH_KEY }}
-          port: ${{ secrets.TEST_SSH_PORT || 22 }}
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_SSH_PORT || 22 }}
           command_timeout: 200m
           source: "deploy.tar.gz"
           target: "/tmp/"
@@ -43,10 +43,10 @@ jobs:
       - name: Deploy and build on EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.TEST_HOST }}
-          username: ${{ secrets.TEST_USERNAME }}
-          key: ${{ secrets.TEST_SSH_KEY }}
-          port: ${{ secrets.TEST_SSH_PORT || 22 }}
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_SSH_PORT || 22 }}
           command_timeout: 200m
           script: |
             # Load Node.js environment (common paths)
@@ -59,7 +59,7 @@ jobs:
             
             # Set deployment variables
             APP_DIR="/home/ubuntu/smar/SAR-backend"
-            # BACKUP_DIR="/var/backups/jeshwinprince-$(date +%Y%m%d-%H%M%S)"
+            BACKUP_DIR="/var/backups/SAR-backend-$(date +%Y%m%d-%H%M%S)"
 
             #! TODO: Replace with actual path to env file
             ENV_DIR="/var/www/config/smar"
@@ -94,12 +94,12 @@ jobs:
             # Use environment in config
             echo "✅ Using existing environment file: $ENV_FILE"
             
-            # Create backup of current deployment
-            # if [ -d "$APP_DIR" ]; then
-            #   sudo mkdir -p /var/backups
-            #   sudo cp -r $APP_DIR $BACKUP_DIR
-            #   echo "Backup created at $BACKUP_DIR"
-            # fi
+            # Create backup of current deployment for rollback safety
+            if [ -d "$APP_DIR" ]; then
+              sudo mkdir -p /var/backups
+              sudo cp -r $APP_DIR $BACKUP_DIR
+              echo "✅ Backup created at $BACKUP_DIR"
+            fi
             
             # Stop the application (assuming PM2)
             pm2 stop "SAR-backend" || echo "App not running"
