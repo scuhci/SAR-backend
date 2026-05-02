@@ -6,10 +6,33 @@ on:
   workflow_dispatch: # Allows manual triggering
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check JS files
+        run: |
+          set -e
+          # Catch parse errors before they ship. Skips node_modules.
+          find . -path ./node_modules -prune -o -name '*.js' -print0 \
+            | xargs -0 -n1 node --check
+
   deploy:
     runs-on: ubuntu-latest
     environment: production
-    
+    needs: verify
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -130,9 +153,31 @@ jobs:
             # Start the application with PM2
             pm2 start index.js --name "SAR-backend"
             pm2 save
-            
+
             # Ensure PM2 starts on boot
             pm2 startup || true
-            
+
+            # Post-deploy smoke test: /health must return 200 within ~20s,
+            # otherwise the workflow fails and the BACKUP_DIR is available
+            # for manual rollback.
+            echo "Running post-deploy smoke test against http://localhost:5001/health ..."
+            SMOKE_OK=0
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              if curl -fsS --max-time 5 http://localhost:5001/health > /dev/null; then
+                echo "✅ Smoke test passed (attempt $i)"
+                SMOKE_OK=1
+                break
+              fi
+              echo "Smoke test attempt $i/10: /health not ready yet, sleeping 2s..."
+              sleep 2
+            done
+            if [ "$SMOKE_OK" -ne 1 ]; then
+              echo "❌ Smoke test failed: /health did not return 200 after 10 attempts"
+              echo "----- Last 50 PM2 log lines for SAR-backend -----"
+              pm2 logs SAR-backend --lines 50 --nostream || true
+              echo "----- Backup of previous deploy is at: $BACKUP_DIR -----"
+              exit 1
+            fi
+
             echo "Deployment completed successfully"
             echo "Environment file location: $ENV_FILE"
