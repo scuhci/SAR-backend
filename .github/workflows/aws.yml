@@ -157,27 +157,106 @@ jobs:
             # Ensure PM2 starts on boot
             pm2 startup || true
 
-            # Post-deploy smoke test: /health must return 200 within ~20s,
-            # otherwise the workflow fails and the BACKUP_DIR is available
-            # for manual rollback.
-            echo "Running post-deploy smoke test against http://localhost:5001/health ..."
-            SMOKE_OK=0
-            for i in 1 2 3 4 5 6 7 8 9 10; do
-              if curl -fsS --max-time 5 http://localhost:5001/health > /dev/null; then
-                echo "✅ Smoke test passed (attempt $i)"
-                SMOKE_OK=1
-                break
+            # Post-deploy smoke test: /health must return 200 within ~20s.
+            # On failure, automatically roll back to $BACKUP_DIR if available,
+            # then re-run the smoke test against the rolled-back version.
+            # Either way, exit 1 so the workflow reports failure and notify
+            # job fires.
+            run_smoke_test() {
+              local label="$1"
+              echo "Running $label smoke test against http://localhost:5001/health ..."
+              for i in 1 2 3 4 5 6 7 8 9 10; do
+                if curl -fsS --max-time 5 http://localhost:5001/health > /dev/null; then
+                  echo "✅ $label smoke test passed (attempt $i)"
+                  return 0
+                fi
+                echo "$label attempt $i/10: /health not ready yet, sleeping 2s..."
+                sleep 2
+              done
+              echo "❌ $label smoke test failed after 10 attempts"
+              return 1
+            }
+
+            if run_smoke_test "post-deploy"; then
+              echo "Deployment completed successfully"
+              echo "Environment file location: $ENV_FILE"
+              exit 0
+            fi
+
+            echo "----- Last 50 PM2 log lines for SAR-backend -----"
+            pm2 logs SAR-backend --lines 50 --nostream || true
+
+            if [ -d "$BACKUP_DIR" ]; then
+              echo ""
+              echo "=== Auto-rolling back to $BACKUP_DIR ==="
+              pm2 stop "SAR-backend" || true
+              pm2 delete "SAR-backend" || true
+              sudo rm -rf "$APP_DIR"
+              sudo mkdir -p "$APP_DIR"
+              sudo cp -r "$BACKUP_DIR/." "$APP_DIR/"
+              sudo chown -R $USER:$USER "$APP_DIR"
+              # Defensively recreate the env symlink in case the backup
+              # captured a stale env or had it as a regular file.
+              ln -sf "$ENV_FILE" "$APP_DIR/.env.production"
+              cd "$APP_DIR"
+              pm2 start index.js --name "SAR-backend"
+              pm2 save
+
+              if run_smoke_test "post-rollback"; then
+                echo "⚠️  Rollback succeeded — previous version is running."
+                echo "    Failed deploy backup retained at: $BACKUP_DIR"
+                exit 1
+              else
+                echo "🔥 Rollback ALSO failed. Manual intervention required."
+                echo "    Failed deploy backup retained at: $BACKUP_DIR"
+                exit 1
               fi
-              echo "Smoke test attempt $i/10: /health not ready yet, sleeping 2s..."
-              sleep 2
-            done
-            if [ "$SMOKE_OK" -ne 1 ]; then
-              echo "❌ Smoke test failed: /health did not return 200 after 10 attempts"
-              echo "----- Last 50 PM2 log lines for SAR-backend -----"
-              pm2 logs SAR-backend --lines 50 --nostream || true
-              echo "----- Backup of previous deploy is at: $BACKUP_DIR -----"
+            else
+              echo "❌ No backup available at $BACKUP_DIR (likely first deploy)."
+              echo "    Cannot auto-rollback. Manual intervention required."
               exit 1
             fi
 
-            echo "Deployment completed successfully"
-            echo "Environment file location: $ENV_FILE"
+  notify-on-failure:
+    runs-on: ubuntu-latest
+    needs: [verify, deploy]
+    if: failure()
+    steps:
+      - name: Post failure notification to webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.DEPLOY_NOTIFY_WEBHOOK }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::warning::DEPLOY_NOTIFY_WEBHOOK secret not set; skipping notification."
+            echo "Add a Slack/Discord incoming-webhook URL to enable failure alerts."
+            exit 0
+          fi
+          # Slack incoming-webhook payload. To switch to Discord, replace the
+          # "text"/"attachments" body with {"username": "...", "embeds":[...]}
+          # and point DEPLOY_NOTIFY_WEBHOOK at the Discord webhook URL.
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "$(jq -n \
+              --arg repo "$REPO" \
+              --arg branch "$BRANCH" \
+              --arg sha "$SHA" \
+              --arg actor "$ACTOR" \
+              --arg run_url "$RUN_URL" \
+              '{
+                text: ":rotating_light: SAR-backend deploy to *\($branch)* failed",
+                attachments: [{
+                  color: "danger",
+                  fields: [
+                    {title: "Repo",   value: $repo,                short: true},
+                    {title: "Branch", value: $branch,              short: true},
+                    {title: "Actor",  value: $actor,               short: true},
+                    {title: "Commit", value: ($sha[0:7]),          short: true},
+                    {title: "Run",    value: "<\($run_url)|View workflow run>", short: false}
+                  ]
+                }]
+              }')" \
+            "$WEBHOOK_URL"
