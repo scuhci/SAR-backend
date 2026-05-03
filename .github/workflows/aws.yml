@@ -222,24 +222,28 @@ jobs:
     needs: [verify, deploy]
     if: failure()
     steps:
-      - name: Post failure notification to webhook
+      - name: Post failure notification to Discord channel
         env:
-          WEBHOOK_URL: ${{ secrets.DEPLOY_NOTIFY_WEBHOOK }}
+          BOT_TOKEN: ${{ secrets.DEPLOY_NOTIFY_BOT_TOKEN }}
+          CHANNEL_ID: ${{ secrets.DEPLOY_NOTIFY_CHANNEL_ID }}
           REPO: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
           ACTOR: ${{ github.actor }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ -z "$WEBHOOK_URL" ]; then
-            echo "::warning::DEPLOY_NOTIFY_WEBHOOK secret not set; skipping notification."
-            echo "Add a Slack/Discord incoming-webhook URL to enable failure alerts."
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHANNEL_ID" ]; then
+            echo "::warning::DEPLOY_NOTIFY_BOT_TOKEN or DEPLOY_NOTIFY_CHANNEL_ID not set; skipping Discord notification."
             exit 0
           fi
-          # Slack incoming-webhook payload. To switch to Discord, replace the
-          # "text"/"attachments" body with {"username": "...", "embeds":[...]}
-          # and point DEPLOY_NOTIFY_WEBHOOK at the Discord webhook URL.
-          curl -sS -X POST -H 'Content-Type: application/json' \
+          # Discord REST API: POST /channels/{channel_id}/messages
+          # https://discord.com/developers/docs/resources/channel#create-message
+          # Embed color is decimal RGB. 15158332 = #E74C3C (Discord red).
+          # Payload built with jq so that branch/actor/sha values cannot break
+          # the JSON or shell-inject if they contain unusual characters.
+          curl -sS -X POST \
+            -H "Authorization: Bot $BOT_TOKEN" \
+            -H 'Content-Type: application/json' \
             --data "$(jq -n \
               --arg repo "$REPO" \
               --arg branch "$BRANCH" \
@@ -247,16 +251,16 @@ jobs:
               --arg actor "$ACTOR" \
               --arg run_url "$RUN_URL" \
               '{
-                text: ":rotating_light: SAR-backend deploy to *\($branch)* failed",
-                attachments: [{
-                  color: "danger",
+                content: ":rotating_light: SAR-backend deploy to **\($branch)** failed",
+                embeds: [{
+                  color: 15158332,
                   fields: [
-                    {title: "Repo",   value: $repo,                short: true},
-                    {title: "Branch", value: $branch,              short: true},
-                    {title: "Actor",  value: $actor,               short: true},
-                    {title: "Commit", value: ($sha[0:7]),          short: true},
-                    {title: "Run",    value: "<\($run_url)|View workflow run>", short: false}
+                    {name: "Repo",   value: $repo,                inline: true},
+                    {name: "Branch", value: $branch,              inline: true},
+                    {name: "Actor",  value: $actor,               inline: true},
+                    {name: "Commit", value: ($sha[0:7]),          inline: true},
+                    {name: "Run",    value: "[View workflow run](\($run_url))", inline: false}
                   ]
                 }]
               }')" \
-            "$WEBHOOK_URL"
+            "https://discord.com/api/v10/channels/$CHANNEL_ID/messages"
