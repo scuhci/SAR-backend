@@ -1,3 +1,23 @@
+const { SocksProxyAgent } = require('socks-proxy-agent');
+const https = require('https');
+const net = require('net');
+
+// Route ALL outbound HTTPS through Tor globally
+const torAgent = new SocksProxyAgent('socks5://127.0.0.1:9050');
+https.globalAgent = torAgent;
+
+// Rotate Tor circuit (get new IP)
+async function rotateTorCircuit() {
+  return new Promise((resolve, reject) => {
+    const client = net.createConnection(9051, '127.0.0.1', () => {
+      client.write('AUTHENTICATE ""\r\nSIGNAL NEWNYM\r\nQUIT\r\n');
+    });
+    client.on('data', () => { client.destroy(); resolve(); });
+    client.on('error', reject);
+  });
+}
+
+
 require("dotenv").config();
 const { google } = require("googleapis");
 const natural = require("natural");
@@ -13,7 +33,7 @@ var node_ttl = new nodeTTL();
 const path = require("path");
 const file_name = path.basename(__filename);
 const cors = require("cors");
-const { globalAgent } = require("node:https");
+// const { globalAgent } = require("node:https");
 const router = require("../routes/searchRoutes");
 
 let csvData;
@@ -47,6 +67,10 @@ const searchController = async (req, res) => {
   const query = req.query.query;
   const permissions = req.query.includePermissions === "true";
   const country = req.query.countryCode;
+
+  await rotateTorCircuit();
+  await new Promise(r => setTimeout(r, 2000));
+
   console.log("[%s] Query Passed: %s\n", file_name, query);
   console.log("[%s] Country Code Passed: %s\n", file_name, country);
 

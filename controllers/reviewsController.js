@@ -1,3 +1,21 @@
+const { SocksProxyAgent } = require('socks-proxy-agent');
+const https = require('https');
+const net = require('net');
+
+const torAgent = new SocksProxyAgent('socks5://127.0.0.1:9050');
+https.globalAgent = torAgent;
+
+async function rotateTorCircuit() {
+  return new Promise((resolve, reject) => {
+    const client = net.createConnection(9051, '127.0.0.1', () => {
+      client.write('AUTHENTICATE ""\r\nSIGNAL NEWNYM\r\nQUIT\r\n');
+    });
+    client.on('data', () => { client.destroy(); resolve(); });
+    client.on('error', reject);
+  });
+}
+
+
 const gplay = require("google-play-scraper");
 const { jsonToCsv } = require("../utilities/jsonToCsv");
 const cors = require("cors");
@@ -101,6 +119,8 @@ const scrapeReviews = async (req, res) => {
 
     try {
         // Get the actual count of reviews
+        await rotateTorCircuit();
+        await new Promise(r => setTimeout(r, 2000));
         const appDetails = await gplay.app({ appId: appId, country: countryCode });
         const reviewsCount = appDetails.reviews;
         const pushQuery = "c:" + countryCode + "_a:" + appId;

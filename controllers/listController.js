@@ -1,3 +1,20 @@
+const { SocksProxyAgent } = require('socks-proxy-agent');
+const https = require('https');
+const net = require('net');
+
+const torAgent = new SocksProxyAgent('socks5://127.0.0.1:9050');
+https.globalAgent = torAgent;
+
+async function rotateTorCircuit() {
+  return new Promise((resolve, reject) => {
+    const client = net.createConnection(9051, '127.0.0.1', () => {
+      client.write('AUTHENTICATE ""\r\nSIGNAL NEWNYM\r\nQUIT\r\n');
+    });
+    client.on('data', () => { client.destroy(); resolve(); });
+    client.on('error', reject);
+  });
+}
+
 const gplay = require("google-play-scraper");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
 const permissionsController = require("./permissionsController");
@@ -58,6 +75,8 @@ const scrapeList = async (req, res) => {
     const query = collection.concat(category, country);
 
     try {
+        await rotateTorCircuit();
+        await new Promise(r => setTimeout(r, 2000));
         // Fetch top list based on the count or the maximum limit
         const toplist = await fetchList(collection, category, num, country);
         console.log(`Scraped Top ${toplist.length} Apps for ${collection} and ${category}`);
