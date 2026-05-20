@@ -51,6 +51,26 @@ app.get("/health/scraper", async (req, res) => {
     res.set("Access-Control-Allow-Origin", "*");
 
     try {
+        // Dev-only mock: set ENABLE_MOCK_HEALTH=true and MOCK_DOWN_SERVICES=reviews,search in .env
+        if (process.env.ENABLE_MOCK_HEALTH === 'true') {
+            const downServices = (process.env.MOCK_DOWN_SERVICES || '').split(',').filter(Boolean);
+            const allServices = ['search', 'app', 'reviews', 'list', 'permissions'];
+            const services = {};
+            allServices.forEach(s => {
+                services[s] = { status: downServices.includes(s) ? 'down' : 'up', responseTime: 0, lastError: null };
+            });
+            const upCount = allServices.filter(s => services[s].status === 'up').length;
+            const overall = upCount === allServices.length ? 'healthy'
+                          : upCount === 0 ? 'unhealthy'
+                          : 'degraded';
+            const statusCode = overall === 'unhealthy' ? 503 : 200;
+            return res.status(statusCode).json({
+                overall, services, flagged: false,
+                consecutiveFailures: 0, flaggedAt: null,
+                lastCheck: new Date().toISOString(),
+            });
+        }
+
         // Always run a live check
         const healthStatus = await checkAllServices();
 
