@@ -1,0 +1,16 @@
+diff --git a/node_modules/google-play-scraper/lib/utils/processPages.js b/node_modules/google-play-scraper/lib/utils/processPages.js
+index 2ec7917..7abdbf5 100644
+--- a/node_modules/google-play-scraper/lib/utils/processPages.js
++++ b/node_modules/google-play-scraper/lib/utils/processPages.js
+@@ -38,7 +38,10 @@ async function processFullDetailApps (apps, opts) {
+     })
+   ));
+ 
+-  return Promise.all(promises);
++  const results = await Promise.allSettled(promises);
++  return results
++    .filter(r => r.status === 'fulfilled')
++    .map(r => r.value);
+ }
+ 
+ const REQUEST_MAPPINGS = {
