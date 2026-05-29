@@ -27,7 +27,9 @@ const fetchList = async (collection, category, num, country) => {
         console.log(options);
         let toplist;
         try {
+            console.log("Fetching list from Google Play with options:", options);
             toplist = await gplay.list(options);
+            console.log(`gplay.list returned ${toplist.length} apps. First item:`, JSON.stringify(toplist[0], null, 2));
         } catch (err) {
             console.error("gplay.list failed:", err);
             throw new Error("Failed to fetch list from Google Play.");
