@@ -5,6 +5,7 @@ const { downloadRelog, downloadCSV, addEmailNotification } = require("./controll
 const { scrapeReviews, downloadReviewsRelog } = require("./controllers/reviewsController");
 const { downloadTopChartsCSV, downloadTopChartsRelog, scrapeList } = require("./controllers/listController");
 const { startPeriodicHealthCheck, getHealthStatus, checkAllServices } = require("./utilities/healthCheck");
+const { prewarmCache } = require("./utilities/prewarmCache");
 
 const path = require("path");
 const searchController = require("./controllers/searchController");
@@ -74,4 +75,7 @@ app.listen(port, () => {
 
     // Start periodic health check for scraper services
     startPeriodicHealthCheck();
+
+    // Pre-warm Redis cache for example searches (fire-and-forget, 2s delay for routes to settle)
+    setTimeout(() => prewarmCache().catch((err) => console.error('[Cache] Pre-warm error:', err.message)), 2000);
 });
