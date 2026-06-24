@@ -4,6 +4,7 @@ const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
 var node_ttl = new nodeTTL();
+const redis = require("../utilities/cacheClient");
 
 const path = require("path");
 const file_name = path.basename(__filename);
@@ -49,6 +50,18 @@ const searchController = async (req, res) => {
     console.error("Missing search query");
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
+
+  const cacheKey = `ios:c:${country}_t:${query}`;
+  try {
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      console.log(`[Cache] Redis hit for "${query}"`);
+      return res.json(JSON.parse(cached));
+    }
+  } catch (e) {
+    console.warn('[Cache] Redis unavailable, falling back to scraper:', e.message);
+  }
+
   try {
     // if an appID is passed as the query
     const mainResults = await search({ term: query, country: country });
@@ -195,10 +208,16 @@ const searchController = async (req, res) => {
     // we want users to get the CSV results corresponding to their entire search, so an update was necessary
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
     console.log("CSV stored on backend");
-    return res.json({
-      totalCount: uniqueResults.length,
-      results: resultsToSend,
-    });
+
+    const responsePayload = { totalCount: uniqueResults.length, results: resultsToSend };
+    try {
+      await redis.set(cacheKey, JSON.stringify(responsePayload), 'EX', 604800);
+      console.log(`[Cache] Stored in Redis: "${query}"`);
+    } catch (e) {
+      console.warn('[Cache] Redis write failed:', e.message);
+    }
+
+    return res.json(responsePayload);
   } catch (error) {
     console.error("Error occurred during search:", error);
     return res
