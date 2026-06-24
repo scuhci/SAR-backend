@@ -4,6 +4,7 @@ const { downloadRelog, downloadCSV } = require('./controllers/searchController')
 const { scrapeReviews, downloadReviewsRelog } = require('./controllers/reviewsController'); 
 const { scrapeList, downloadTopChartsCSV, downloadTopChartsRelog} = require('./controllers/listController');
 const { startPeriodicHealthCheck, getHealthStatus, checkAllServices } = require('./utilities/healthCheck');
+const { prewarmCache } = require('./utilities/prewarmCache');
 const path = require('path');
 const app = express();
 const port = 5002;
@@ -50,7 +51,10 @@ app.get('/health/scraper', async (req, res) => {
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
-  
+
   // Start periodic health check for scraper services
   startPeriodicHealthCheck();
+
+  // Pre-warm Redis cache for example searches (fire-and-forget, 2s delay for routes to settle)
+  setTimeout(() => prewarmCache().catch((err) => console.error('[Cache] Pre-warm error:', err.message)), 2000);
 });
