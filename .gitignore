@@ -3,6 +3,11 @@ build
 .nyc
 .DS_Store
 search_results.csv
+
+# Claude Code local files
+CLAUDE.md
+docs/
+previous_session.txt
 package-lock.json
 
 # Logs
