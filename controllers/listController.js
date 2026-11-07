@@ -10,19 +10,27 @@ const file_name = path.basename(__filename);
 
 
 const MAX_APPS_COUNT = 200;
+// Apple's RSS feed returns feed.entry as a single object (not an array) when
+// limit=1, which makes app-store-scraper's list() throw "apps.map is not a
+// function". Always ask the library for at least 2 and trim the result below.
+const MIN_LIST_REQUEST = 2;
 
 const fetchList = async (collection, category, num, country) => {
-    options = {
+    // The library defaults to 50 and rejects anything above 200, so always pass
+    // an explicit, validated count. Anything missing or invalid means "as many as possible".
+    const numAppsToFetch =
+      Number.isInteger(num) && num > 0 && num < MAX_APPS_COUNT ? num : MAX_APPS_COUNT;
+    const options = {
       category: category,
       collection: collection,
       country: country,
+      num: Math.max(numAppsToFetch, MIN_LIST_REQUEST),
       fullDetail: true,
     };
-  
+
     try {
-      let numAppsToFetch = num && num < MAX_APPS_COUNT ? num : MAX_APPS_COUNT;
       console.log(options);
-      const toplist = await list(options);
+      let toplist = await list(options);
 
       for (const result of toplist) {
         console.log(`[%s] App Title: %s\n`, file_name, result.title);
@@ -45,7 +53,7 @@ const fetchList = async (collection, category, num, country) => {
     const category = Number(req.query.category);
     const categoryName = req.query.categoryName;
     const country = req.query.country;
-    const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
+    const num = req.query.num ? parseInt(req.query.num, 10) : MAX_APPS_COUNT;
     const permissions = false;
     const query = collection.concat(categoryName, country);
   
