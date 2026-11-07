@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("../utilities/loadEnv");
 const { google } = require("googleapis");
 const natural = require("natural");
 const { search, app } = require("google-play-scraper");

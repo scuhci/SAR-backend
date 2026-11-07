@@ -1,3 +1,4 @@
+require("./utilities/loadEnv");
 const express = require("express");
 const searchRoutes = require("./routes/searchRoutes");
 const permissionsRoute = require("./routes/permissionsRoute");

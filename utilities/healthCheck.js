@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("./loadEnv");
 const gplay = require("google-play-scraper");
 const nodemailer = require("nodemailer");
 
@@ -46,7 +46,7 @@ let flaggedAt = null;
 // Interval timer reference for graceful shutdown
 let healthCheckInterval = null;
 
-// Dev team emails to notify on health events — add addresses to ALERT_EMAILS in .env (comma-separated)
+// Dev team emails to notify on health events — add addresses to ALERT_EMAILS in .env / .env.production (comma-separated)
 const ALERT_EMAILS = process.env.ALERT_EMAILS
   ? process.env.ALERT_EMAILS.split(",").map((e) => e.trim())
   : [];
@@ -578,6 +578,9 @@ async function checkAllServices() {
 function startPeriodicHealthCheck() {
   const intervalMinutes = Math.round(HEALTH_CHECK_INTERVAL / 60000);
   console.log(`[HEALTH] Starting periodic health check (interval: ${intervalMinutes} minutes)`);
+  if (ALERT_EMAILS.length === 0) {
+    console.log("[HEALTH] ALERT_EMAILS is not set: a flagged scraper will not email anyone.");
+  }
 
   // Run initial check immediately
   checkAllServices().catch((error) => {
