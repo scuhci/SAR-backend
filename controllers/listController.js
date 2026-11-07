@@ -49,9 +49,19 @@ const fetchList = async (collection, category, num, country) => {
 };
 
 // Returns an error message for an unusable top charts query string, or null.
-const validateListQuery = (collection) => {
+// An empty category is allowed: the frontend sends it for "all apps".
+const validateListQuery = ({ collection, category, country, num }) => {
     if (typeof collection !== "string" || !Object.values(gplay.collection).includes(collection)) {
         return `Invalid or missing collection. Expected one of: ${Object.values(gplay.collection).join(", ")}.`;
+    }
+    if (category !== undefined && category !== "" && (typeof category !== "string" || !Object.values(gplay.category).includes(category))) {
+        return `Invalid category ${category}.`;
+    }
+    if (country !== undefined && (typeof country !== "string" || !/^[a-z]{2}$/i.test(country))) {
+        return "Invalid country. Expected a two-letter country code.";
+    }
+    if (num !== undefined && num !== "" && (typeof num !== "string" || !/^[1-9][0-9]*$/.test(num))) {
+        return "Invalid num. Expected a positive integer.";
     }
     return null;
 };
@@ -61,15 +71,15 @@ const scrapeList = async (req, res) => {
     const collection = req.query.collection;
     const category = req.query.category;
     const country = req.query.country;
-    const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
     const permissions = req.query.includePermissions;
 
     // Validate before touching the values: Express 4 does not catch a rejected async
     // handler, so a throw outside the try below exits the whole process.
-    const validationError = validateListQuery(collection);
+    const validationError = validateListQuery(req.query);
     if (validationError) {
         return res.status(400).json({ error: validationError });
     }
+    const num = req.query.num ? parseInt(req.query.num, 10) : MAX_APPS_COUNT;
 
     try {
         const query = collection.concat(category, country);

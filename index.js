@@ -36,10 +36,10 @@ app.post("/email", searchController.addEmailNotification);
 // Bulk reviews relog
 app.use("/download-reviews-relog", downloadReviewsRelog);
 
-// Top lists
-app.use("/toplists", scrapeList);
-app.use("/download-top-relog", downloadTopChartsRelog);
-app.use("/download-top-csv", downloadTopChartsCSV);
+// Top lists (GET only: app.use also ran these for POST/PUT and any sub-path)
+app.get("/toplists", scrapeList);
+app.get("/download-top-relog", downloadTopChartsRelog);
+app.get("/download-top-csv", downloadTopChartsCSV);
 
 // Basic liveness check endpoint (for load balancers)
 app.get("/health", (req, res) => {
@@ -75,9 +75,14 @@ process.on("unhandledRejection", (reason) => {
     console.error("Unhandled promise rejection:", reason);
 });
 
-app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
+// Listen only when started directly (node index.js / pm2 start index.js); tests require the app.
+if (require.main === module) {
+    app.listen(port, () => {
+        console.log(`Server is running on http://localhost:${port}`);
 
-    // Start periodic health check for scraper services
-    startPeriodicHealthCheck();
-});
+        // Start periodic health check for scraper services
+        startPeriodicHealthCheck();
+    });
+}
+
+module.exports = app;
