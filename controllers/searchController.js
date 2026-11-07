@@ -100,6 +100,11 @@ const searchController = async (req, res) => {
       console.log("[%s] %s\n", file_name, result.title);
     }
     console.log("All results fetched\n");
+
+    // Apple returned no apps for this term: an empty result, not a server error.
+    if (allResults.length === 0) {
+      return res.json({ totalCount: 0, results: [] });
+    }
     // Fetch additional details (including genre) for each result
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
@@ -136,8 +141,9 @@ const searchController = async (req, res) => {
       return validResults.find((appInfo) => appInfo.appId === appId);
     });
 
+    // Apple returned hits but every detail lookup failed: still an error.
     if (uniqueResults.length === 0) {
-      throw new Error(`Search for '${query}' did not return any results.`);
+      throw new Error(`No app details could be fetched for '${query}'.`);
     }
 
     // Calculate similarity score for all unique results
@@ -158,10 +164,6 @@ const searchController = async (req, res) => {
         result.title,
         result.similarityScore
       );
-    }
-
-    if (resultsWithSimilarityScore.length === 0) {
-      throw new Error(`Search for '${query}' did not return any results.`);
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
