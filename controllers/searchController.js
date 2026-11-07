@@ -54,7 +54,10 @@ const searchController = async (req, res) => {
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
     try {
-      const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
+      // checking if our query is a valid app ID: all digits is the numeric id
+      // from an App Store URL, anything else is tried as a bundle id
+      const lookup = /^\d+$/.test(query) ? { id: query } : { appId: query };
+      const fetched_appID = await app({ ...lookup, country: country });
       console.log("App ID passed\n");
       mainResults.splice(0, mainResults.length, fetched_appID);
     } catch (error) {
