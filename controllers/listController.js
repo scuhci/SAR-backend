@@ -12,9 +12,6 @@ const file_name = path.basename(__filename);
 
 const MAX_APPS_COUNT = 1000000;
 
-// Set by the last top charts scrape; undefined until the first one on this process.
-let csvData;
-
 const fetchList = async (collection, category, num, country) => {
     const options = {
         category: category,
@@ -76,6 +73,7 @@ const scrapeList = async (req, res) => {
     const country = req.query.country;
     const permissions = req.query.includePermissions;
     let resultsToSend;
+    let csvData;
 
     // Validate before touching the values: Express 4 does not catch a rejected async
     // handler, so a throw outside the try below exits the whole process.
@@ -195,16 +193,19 @@ const downloadTopChartsRelog = (req, res) => {
 const downloadTopChartsCSV = (req, res) => {
     // Use cors middleware for downloadCSV route
     cors()(req, res, () => {
-        if (!csvData) {
-            return res.status(404).json({ error: "CSV data not available." });
+        const query = req.query.query;
+        const permissions = req.query.includePermissions === "true";
+        console.log("Query used for CSV: %s\n", query);
+        var csvInfo = node_ttl.get(query);
+
+        // Not cached: never scraped on this process, or the one-week TTL has passed.
+        if (!csvInfo) {
+            return res.status(404).json({
+                error: "Results for this search were not found or have expired. Please search again.",
+            });
         }
 
         try {
-            // Use the existing jsonToCsv method to convert JSON to CSV
-            const query = req.query.query;
-            const permissions = req.query.includePermissions === "true";
-            console.log("Query used for CSV: %s\n", query);
-            var csvInfo = node_ttl.get(query);
             const csv = jsonToCsv(csvInfo, "app", standardPermissionsList, permissions);
             // Get the current timestamp in the desired format
             const timestamp = new Date().toLocaleString("en-US", {
