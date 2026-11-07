@@ -69,6 +69,12 @@ app.get("/health/scraper", async (req, res) => {
 // Fallback
 app.get("/*", (req, res) => res.sendFile("/home/ubuntu/smar/sar-frontend/public/index.html"));
 
+// Safety net: Express 4 does not catch rejected async route handlers, and Node exits
+// on an unhandled rejection, dropping every in-flight request and the in-memory caches.
+process.on("unhandledRejection", (reason) => {
+    console.error("Unhandled promise rejection:", reason);
+});
+
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 

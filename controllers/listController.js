@@ -48,6 +48,14 @@ const fetchList = async (collection, category, num, country) => {
     }
 };
 
+// Returns an error message for an unusable top charts query string, or null.
+const validateListQuery = (collection) => {
+    if (typeof collection !== "string" || !Object.values(gplay.collection).includes(collection)) {
+        return `Invalid or missing collection. Expected one of: ${Object.values(gplay.collection).join(", ")}.`;
+    }
+    return null;
+};
+
 const scrapeList = async (req, res) => {
     console.log("Received Top List Scrape Request");
     const collection = req.query.collection;
@@ -55,9 +63,17 @@ const scrapeList = async (req, res) => {
     const country = req.query.country;
     const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
     const permissions = req.query.includePermissions;
-    const query = collection.concat(category, country);
+
+    // Validate before touching the values: Express 4 does not catch a rejected async
+    // handler, so a throw outside the try below exits the whole process.
+    const validationError = validateListQuery(collection);
+    if (validationError) {
+        return res.status(400).json({ error: validationError });
+    }
 
     try {
+        const query = collection.concat(category, country);
+
         // Fetch top list based on the count or the maximum limit
         const toplist = await fetchList(collection, category, num, country);
         console.log(`Scraped Top ${toplist.length} Apps for ${collection} and ${category}`);
