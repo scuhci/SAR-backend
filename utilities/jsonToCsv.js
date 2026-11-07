@@ -1,28 +1,48 @@
+// Turn an HTML field from google-play-scraper (summary, recentChanges) into the
+// single-line plain text shown on the website and written to the CSV. The
+// controllers call this once per field; it does not do any CSV escaping.
+function htmlToText(html) {
+  if (typeof html !== 'string') {
+    return html;
+  }
+
+  return html
+  .replace(/<br\s*\/?>/gi, ' ') // HTML line breaks become spaces
+  .replace(/<[^>]+>/g, '') // Remove the remaining HTML tags
+  .replace(/&quot;/g, '"')
+  .replace(/&apos;/g, "'")
+  .replace(/&#39;/g, "'")
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/&amp;/g, '&') // last, so "&amp;lt;" stays "&lt;"
+  .replace(/\r?\n|\r/g, ' '); // Other line breaks become spaces
+}
+
+// Prepare one value for a double-quoted CSV cell: double the quotes and
+// flatten line breaks. It does not touch HTML; the controllers have already
+// turned the HTML fields into plain text, and every other field is plain text.
 function cleanText(text) {
   if (typeof text !== 'string') {
     return text;
   }
 
-  // Remove HTML tags and decode HTML entities
-  let cleanedText = text
-  .replace(/<[^>]+>/g, '') // Remove HTML tags
-  .replace(/&quot;/g, '"')
-  .replace(/&amp;/g, '&')
-  .replace(/&apos;/g, "'")
-  .replace(/&lt;/g, '<')
-  .replace(/&gt;/g, '>')
-  .replace(/&#39;/g, "'");
+  return text
+  .replace(/"/g, '""') // Escape double quotes within the text
+  .replace(/\r?\n|\r/g, ' '); // Replace line breaks with spaces
+}
 
-  // Escape double quotes within the text
-  cleanedText = cleanedText.replace(/"/g, '""');
-
-  // Replace HTML line breaks with spaces
-  cleanedText = cleanedText.replace(/<br\s*\/?>/g, ' ');
-
-  // Replace other line breaks with spaces
-  cleanedText = cleanedText.replace(/\r?\n|\r/g, ' ');
-
-  return cleanedText;
+// Write one value as a CSV cell. Missing values (null/undefined) are an empty
+// cell; dates are ISO-8601 UTC; objects are JSON; everything else is quoted.
+function csvCell(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (value instanceof Date) {
+    value = value.toISOString();
+  } else if (typeof value === 'object') {
+    value = JSON.stringify(value);
+  }
+  return `"${cleanText(String(value))}"`;
 }
 
 function fixColumns(oldColumns, source)
@@ -68,14 +88,82 @@ function fixColumns(oldColumns, source)
   return columns;
 }
 
+// Fixed column order for each CSV, by scraper field name (fixColumns renames
+// them afterwards). This is the order documented in the User Guide, which is
+// also what keyword searches have always produced.
+const appColumnOrder = [
+  'title',
+  'appId',
+  'url',
+  'icon',
+  'developer',
+  'developerId',
+  'currency',
+  'price',
+  'summary',
+  'score',
+  'country',
+  'source',
+  'maxInstalls',
+  'ratings',
+  'reviews',
+  'originalPrice',
+  'discountEndDate',
+  'available',
+  'offersIAP',
+  'IAPRange',
+  'androidVersion',
+  'developerEmail',
+  'developerWebsite',
+  'developerAddress',
+  'privacyPolicy',
+  'genreId',
+  'contentRating',
+  'adSupported',
+  'released',
+  'version',
+  'recentChanges',
+];
+const reviewsColumnOrder = [
+  'id',
+  'date',
+  'score',
+  'url',
+  'text',
+  'replyDate',
+  'replyText',
+  'version',
+  'thumbsUp',
+  'country',
+];
+
+// Put the columns in the fixed order; a field the order does not know about
+// keeps its place after the known ones.
+function orderColumns(columns, source)
+{
+  const order = source == 'reviews' ? reviewsColumnOrder : appColumnOrder;
+  return [
+    ...order.filter(column => columns.includes(column)),
+    ...columns.filter(column => !order.includes(column)),
+  ];
+}
+
 function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions = false) {
   const csvRows = [];
   const currentTime = new Date();
 
   // console.log(jsonData);
 
-  // Extract column headers dynamically from the first object in jsonData
-  let columns = Object.keys(jsonData[0] || {});
+  // Collect the column headers from every row, so a field missing from the
+  // first row is not dropped from the others
+  let columns = [];
+  for (const row of jsonData) {
+    for (const key of Object.keys(row)) {
+      if (!columns.includes(key)) {
+        columns.push(key);
+      }
+    }
+  }
 
   // Adjust columns
   // Define columns to exclude
@@ -120,6 +208,7 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
   }
   // Remove excluded columns
   columns = columns.filter(column => !columnsToExclude.includes(column));
+  columns = orderColumns(columns, source);
   columns.push('dateScraped'); // adding this to list the timestamp the data was scraped at
   // Add standard permissions columns if includePermissions is true
   if (includePermissions) {
@@ -134,24 +223,20 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
     const rowValues = [];
     for (const column of columns) {
       if (column in row) {
-        rowValues.push(`"${cleanText(row[column])}"`);
-        if(rowValues[rowValues.length-1] == `"primary search"`)
-        {
-          rowValues.pop();
-          rowValues.push(`"keyword search"`);
+        let value = row[column];
+        if (value === 'primary search') {
+          value = 'keyword search';
+        } else if (value === 'related app') {
+          value = 'similar app links';
         }
-        else if(rowValues[rowValues.length-1] == `"related app"`)
-        {
-          rowValues.pop();
-          rowValues.push(`"similar app links"`);
-        }
+        rowValues.push(csvCell(value));
       } else if (source == 'app' && standardPermissionsList.includes(column)) {
         const permission = row.permissions.find(p => p.permission === column);
         rowValues.push(permission ? true : false);
       }
       else if (column == 'dateScraped')
       {
-        rowValues.push(currentTime);
+        rowValues.push(csvCell(currentTime));
       }
       else {
         rowValues.push('');
@@ -162,11 +247,13 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
   // editing column names 
   columns = fixColumns(columns, source);
   // adding them to the top of the CSV
-  csvRows.unshift(columns.map(column => `"${cleanText(column)}"`).join(','));
-  return csvRows.join('\n');
+  csvRows.unshift(columns.map(column => csvCell(column)).join(','));
+  // RFC 4180 separates records with CRLF
+  return csvRows.join('\r\n');
 }
 
 module.exports = {
+  htmlToText,
   cleanText, 
   jsonToCsv,
 };

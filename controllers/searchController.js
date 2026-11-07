@@ -2,7 +2,7 @@ require("dotenv").config();
 const { google } = require("googleapis");
 const natural = require("natural");
 const { search, app } = require("google-play-scraper");
-const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
+const { htmlToText, jsonToCsv } = require("../utilities/jsonToCsv");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
@@ -176,16 +176,18 @@ const searchController = async (req, res) => {
       throw new Error(`Search for '${query}' did not return any results.`);
     }
 
-    // Apply cleanText to the summary and recentChanges properties of each result
+    // Turn the HTML summary and recentChanges into plain text, in place, so the
+    // website and the cached CSV data both carry it. No CSV escaping here:
+    // jsonToCsv escapes each cell itself.
     const cleanedLimitedResults = resultsWithSimilarityScore.map((result) => {
       // Clean the summary column
       if (result.summary) {
-        result.summary = cleanText(result.summary);
+        result.summary = htmlToText(result.summary);
       }
 
       // Clean the recentChanges column
       if (result.recentChanges) {
-        result.recentChanges = cleanText(result.recentChanges);
+        result.recentChanges = htmlToText(result.recentChanges);
       }
 
       return result;
@@ -424,7 +426,7 @@ const downloadRelog = (req, res) => {
       }
       const fileText = logInfo_arr.join("\n");
       console.log(fileText);
-      const filename = "Reproducibility_Log_" + logInfo["query"];
+      const filename = "Reproducibility_Log_" + encodeURIComponent(logInfo.search_query) + ".txt";
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${filename}"`,
@@ -484,7 +486,7 @@ const downloadCSV = (req, res) => {
       const suggestedFilename = `${query}_${formattedTimestamp}.csv`;
       res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
 
-      res.setHeader("Content-Type", ["text/csv", "charset=utf-8"]);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
 
       // Set response headers for CSV download
       res.setHeader(
