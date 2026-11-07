@@ -154,7 +154,10 @@ const downloadTopChartsRelog = (req, res) => {
             }
             const fileText = logInfo_arr.join("\n");
             console.log(fileText);
-            const filename = "Reproducibility_Log_" + logInfo["query"];
+            const filename =
+                "Reproducibility_Log_" +
+                encodeURIComponent(`${logInfo.collection}_${logInfo.category}_${logInfo.country}`) +
+                ".txt";
             res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
             res.setHeader("Content-Type", "text/plain");
             res.send(fileText);
