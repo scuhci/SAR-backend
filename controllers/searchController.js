@@ -441,18 +441,22 @@ const downloadRelog = (req, res) => {
 const downloadCSV = (req, res) => {
   // Use cors middleware for downloadCSV route
   cors()(req, res, () => {
-    if (!csvData) {
-      return res.status(404).json({ error: "CSV data not available." });
+    const query = req.query.query;
+    const permissions = req.query.includePermissions === "true";
+    const country = req.query.countryCode;
+    const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // to retrieve the csv information from node_ttl
+    console.log("pushQuery used for CSV: %s\n", pushQuery);
+    var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
+
+    // Not cached: never searched on this process, or the one-week TTL has passed.
+    if (!csvInfo) {
+      return res.status(404).json({
+        error:
+          "Results for this search were not found or have expired. Please search again.",
+      });
     }
 
     try {
-      // Use the existing jsonToCsv method to convert JSON to CSV
-      const query = req.query.query;
-      const permissions = req.query.includePermissions === "true";
-      const country = req.query.countryCode;
-      const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // to retrieve the csv information from node_ttl
-      console.log("pushQuery used for CSV: %s\n", pushQuery);
-      var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
       const csv = jsonToCsv(
         csvInfo,
         "app",
