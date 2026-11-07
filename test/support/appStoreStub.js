@@ -22,7 +22,8 @@ const handlers = {
     if (!found) throw new Error('App not found (404)');
     return { ...found };
   },
-  similar: () => [],
+  // The health monitor asks by id; /search asks by appId and gets no related apps.
+  similar: ({ id }) => (id ? [{ ...UNRELATED }] : []),
   reviews: () => [{ id: 'r1', title: 'Great', text: 'Works well', score: 5 }],
   list: () => [{ ...INSTAGRAM }, { ...UNRELATED }],
 };

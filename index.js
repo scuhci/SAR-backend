@@ -3,7 +3,7 @@ const searchRoutes = require('./routes/searchRoutes');
 const { downloadRelog, downloadCSV } = require('./controllers/searchController');
 const { scrapeReviews, downloadReviewsRelog } = require('./controllers/reviewsController'); 
 const { scrapeList, downloadTopChartsCSV, downloadTopChartsRelog} = require('./controllers/listController');
-const { startPeriodicHealthCheck, getHealthStatus, checkAllServices } = require('./utilities/healthCheck');
+const { startPeriodicHealthCheck, getHealthStatus } = require('./utilities/healthCheck');
 const path = require('path');
 const app = express();
 const port = process.env.PORT || 5002;
@@ -28,24 +28,17 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Detailed health check endpoint for scraper services
-app.get('/health/scraper', async (req, res) => {
+// Detailed health check endpoint for scraper services. Serves the result of
+// the last periodic check: only the monitor runs live App Store calls and owns
+// the consecutive-failure counter, so anonymous polls cannot add store traffic
+// or trip the alert flag.
+app.get('/health/scraper', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  
-  try {
-    // Always run a live check against the scraper
-    const healthStatus = await checkAllServices();
-    
-    // Return 503 if unhealthy, 200 otherwise
-    const statusCode = healthStatus.overall === 'unhealthy' ? 503 : 200;
-    res.status(statusCode).json(healthStatus);
-  } catch (error) {
-    console.error('[HEALTH] Error in health endpoint:', error.message);
-    res.status(500).json({ 
-      error: 'Failed to retrieve health status',
-      message: error.message 
-    });
-  }
+  const healthStatus = getHealthStatus();
+
+  // Return 503 if unhealthy, 200 otherwise
+  const statusCode = healthStatus.overall === 'unhealthy' ? 503 : 200;
+  res.status(statusCode).json(healthStatus);
 });
 
 // Answer unexpected errors with JSON. Express's default handler sends an HTML
