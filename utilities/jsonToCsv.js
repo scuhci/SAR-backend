@@ -18,31 +18,17 @@ function htmlToText(html) {
   .replace(/\r?\n|\r/g, ' '); // Other line breaks become spaces
 }
 
+// Prepare one value for a double-quoted CSV cell: double the quotes and
+// flatten line breaks. It does not touch HTML; the controllers have already
+// turned the HTML fields into plain text, and every other field is plain text.
 function cleanText(text) {
   if (typeof text !== 'string') {
     return text;
   }
 
-  // Remove HTML tags and decode HTML entities
-  let cleanedText = text
-  .replace(/<[^>]+>/g, '') // Remove HTML tags
-  .replace(/&quot;/g, '"')
-  .replace(/&amp;/g, '&')
-  .replace(/&apos;/g, "'")
-  .replace(/&lt;/g, '<')
-  .replace(/&gt;/g, '>')
-  .replace(/&#39;/g, "'");
-
-  // Escape double quotes within the text
-  cleanedText = cleanedText.replace(/"/g, '""');
-
-  // Replace HTML line breaks with spaces
-  cleanedText = cleanedText.replace(/<br\s*\/?>/g, ' ');
-
-  // Replace other line breaks with spaces
-  cleanedText = cleanedText.replace(/\r?\n|\r/g, ' ');
-
-  return cleanedText;
+  return text
+  .replace(/"/g, '""') // Escape double quotes within the text
+  .replace(/\r?\n|\r/g, ' '); // Replace line breaks with spaces
 }
 
 function fixColumns(oldColumns, source)
