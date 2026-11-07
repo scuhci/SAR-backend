@@ -14,6 +14,36 @@ const router = require("../routes/searchRoutes");
 let csvData;
 let globalQuery;
 
+// Apple rate-limits bursts of lookups, so the store calls made while expanding
+// one keyword search share a throttle: at most LOOKUP_CONCURRENCY calls in
+// flight and at least LOOKUP_SPACING_MS between the start of any two calls.
+const LOOKUP_CONCURRENCY = 4;
+const LOOKUP_SPACING_MS = 250;
+
+function createThrottle() {
+  let nextStartAt = 0;
+  // Run fn over every item through the throttle and return results in order
+  return async function mapThrottled(items, fn) {
+    const results = new Array(items.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < items.length) {
+        const i = next++;
+        const now = Date.now();
+        const wait = Math.max(0, nextStartAt - now);
+        nextStartAt = Math.max(now, nextStartAt) + LOOKUP_SPACING_MS;
+        if (wait > 0) {
+          await new Promise((resolve) => setTimeout(resolve, wait));
+        }
+        results[i] = await fn(items[i]);
+      }
+    };
+    const workers = Math.min(LOOKUP_CONCURRENCY, items.length);
+    await Promise.all(Array.from({ length: workers }, worker));
+    return results;
+  };
+}
+
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
   const intersection = new Set([...set1].filter((x) => set2.has(x)));
@@ -53,6 +83,8 @@ const searchController = async (req, res) => {
     // if an appID is passed as the query
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
+    const relatedFailedFor = [];
+    const mapThrottled = createThrottle();
     try {
       const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
       console.log("App ID passed\n");
@@ -60,20 +92,18 @@ const searchController = async (req, res) => {
     } catch (error) {
       // Secondary search for each primary result if required
       console.log("App ID not passed\n");
-      for (const mainResult of mainResults) {
-
+      const similarLists = await mapThrottled(mainResults, async (mainResult) => {
         console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
         try {
-          relatedResults.push(...await similar({appId: mainResult.appId}));
+          return await similar({appId: mainResult.appId});
+        } catch (error) {
+          console.error(`Unable to fetch related apps for appID: ${mainResult.appId}`);
+          relatedFailedFor.push(mainResult.appId);
+          return [];
         }
-        catch {
-          console.error(`Unable to fetch app details for appID: ${mainResult.appId}`);
-        }
-        //const relatedQuery = `related to ${mainResult.title}`;
-        // relatedResults.push(await search({ term: relatedQuery }));
-
-        // Introduce a delay between requests (e.g., 1 second)
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+      });
+      for (const list of similarLists) {
+        relatedResults.push(...list);
       }
     }
 
@@ -100,22 +130,30 @@ const searchController = async (req, res) => {
       console.log("[%s] %s\n", file_name, result.title);
     }
     console.log("All results fetched\n");
-    // Fetch additional details (including genre) for each result
-    const detailedResults = await Promise.all(
-      allResults.map(async (appInfo) => {
-        try {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          const appDetails = await app({
-            appId: appInfo.appId,
-            country: country,
-          });
-          return { ...appInfo, ...appDetails };
-        } catch (error) {
-          console.error("Error fetching app details:", error);
-          return null;
-        }
-      })
-    );
+    // Fetch additional details (including genre) for each result. Each appId
+    // is looked up once, and lookups that fail are reported, not just dropped.
+    const seenAppIds = new Set();
+    const appsToLookUp = allResults.filter((appInfo) => {
+      if (seenAppIds.has(appInfo.appId)) {
+        return false;
+      }
+      seenAppIds.add(appInfo.appId);
+      return true;
+    });
+    const failedAppIds = [];
+    const detailedResults = await mapThrottled(appsToLookUp, async (appInfo) => {
+      try {
+        const appDetails = await app({
+          appId: appInfo.appId,
+          country: country,
+        });
+        return { ...appInfo, ...appDetails };
+      } catch (error) {
+        console.error("Error fetching app details for %s:", appInfo.appId, error);
+        failedAppIds.push(appInfo.appId);
+        return null;
+      }
+    });
 
     // Filter out apps with missing details
     const validResults = detailedResults.filter((appInfo) => appInfo !== null);
@@ -198,6 +236,11 @@ const searchController = async (req, res) => {
     return res.json({
       totalCount: uniqueResults.length,
       results: resultsToSend,
+      // Apps (or related-app lists) the store failed to return; non-empty
+      // means the results above are incomplete
+      partial: failedAppIds.length > 0 || relatedFailedFor.length > 0,
+      failedAppIds: failedAppIds,
+      relatedFailedFor: relatedFailedFor,
     });
   } catch (error) {
     console.error("Error occurred during search:", error);
