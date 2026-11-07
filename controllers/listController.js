@@ -1,4 +1,5 @@
 const gplay = require("google-play-scraper");
+require("../utilities/gplayCategoryGuard");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
@@ -11,11 +12,47 @@ const path = require("path");
 const file_name = path.basename(__filename);
 
 const MAX_APPS_COUNT = 1000000;
+// How many app detail pages to request from the store at once.
+const DETAIL_FETCH_CONCURRENCY = 10;
 
 // The stored result set depends on the chart, how many apps were asked for and whether
 // permissions were fetched, so all of that goes into the cache key. Otherwise a later scrape
 // of the same chart by another user replaces the data behind someone else's download.
 const cacheKey = (query, num, permissions) => `${query}_n:${num}_p:${permissions}`;
+
+// Load the full detail page for every app in the chart, a few at a time and in chart order.
+// gplay.list({ fullDetail: true }) does this with Promise.all, so one app whose detail page
+// fails (removed from the store, or a page the parser cannot read) rejected the whole chart.
+// Here a failed app is logged and reported in `skipped` instead.
+const fetchDetails = async (apps, country) => {
+    const settled = new Array(apps.length);
+    let next = 0;
+    const worker = async () => {
+        while (next < apps.length) {
+            const index = next++;
+            try {
+                const detail = await gplay.app({ appId: apps[index].appId, lang: "en", country: country });
+                settled[index] = { detail };
+            } catch (err) {
+                settled[index] = { error: err && err.message ? err.message : String(err) };
+            }
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(DETAIL_FETCH_CONCURRENCY, apps.length) }, worker));
+
+    const details = [];
+    const skipped = [];
+    settled.forEach((result, index) => {
+        const app = apps[index];
+        if (result.detail) {
+            details.push(result.detail);
+        } else {
+            console.error(`[%s] Skipping %s (%s): detail fetch failed: %s`, file_name, app.appId, app.title, result.error);
+            skipped.push({ rank: index + 1, appId: app.appId, title: app.title, error: result.error });
+        }
+    });
+    return { details, skipped };
+};
 
 const fetchList = async (collection, category, num, country) => {
     const options = {
@@ -24,7 +61,7 @@ const fetchList = async (collection, category, num, country) => {
         lang: "en",
         country: country,
         num: num,
-        fullDetail: true,
+        fullDetail: false,
     };
 
     try {
@@ -38,15 +75,17 @@ const fetchList = async (collection, category, num, country) => {
             throw new Error("Failed to fetch list from Google Play.");
         }
 
-        for (const result of toplist) {
-            console.log(`[%s] App Title: %s\n`, file_name, result.title);
-        }
-
         if (toplist.length > numAppsToFetch) {
             toplist = toplist.slice(0, numAppsToFetch);
         }
 
-        return toplist;
+        const { details, skipped } = await fetchDetails(toplist, country);
+
+        for (const result of details) {
+            console.log(`[%s] App Title: %s\n`, file_name, result.title);
+        }
+
+        return { toplist: details, skipped: skipped };
     } catch (error) {
         console.error("Error scraping top list.", error);
         throw new Error("An error occurred while scraping for top list.");
@@ -66,14 +105,26 @@ const scrapeList = async (req, res) => {
 
     try {
         // Fetch top list based on the count or the maximum limit
-        const toplist = await fetchList(collection, category, num, country);
+        const { toplist, skipped } = await fetchList(collection, category, num, country);
         console.log(`Scraped Top ${toplist.length} Apps for ${collection} and ${category}`);
+        if (skipped.length > 0) {
+            console.log(`Skipped ${skipped.length} apps whose detail page could not be fetched`);
+        }
+
+        if (toplist.length === 0 && skipped.length > 0) {
+            // The chart loaded but not one detail page did: the store is failing, not the chart empty.
+            return res.status(502).json({
+                error: "Google Play did not return details for any app in this chart. Please try again later.",
+                skipped: skipped,
+            });
+        }
 
         if (!toplist || !Array.isArray(toplist) || toplist.length === 0) {
             console.log("No results returned from fetchList");
             return res.json({
                 totalCount: 0,
                 results: [],
+                skipped: skipped,
             });
         }
 
@@ -126,6 +177,8 @@ const scrapeList = async (req, res) => {
         return res.json({
             totalCount: resultsToSend.length,
             results: resultsToSend,
+            // Chart entries whose detail page failed to load; not in results or the CSV.
+            skipped: skipped,
         });
     } catch (error) {
         console.error("Error getting top list:", error);

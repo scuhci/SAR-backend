@@ -16,6 +16,7 @@ const makeApp = (i) => ({
 
 // gplay.list returns up to `num` canned apps; fetchPermissions tags each app with one permission.
 gplay.list = async (options) => Array.from({ length: Math.min(options.num, 50) }, (_, i) => makeApp(i));
+gplay.app = async ({ appId }) => makeApp(Number(appId.replace("com.example.app", "")));
 permissionsController.fetchPermissions = async (results) =>
     results.map((appInfo) => ({
         ...appInfo,
