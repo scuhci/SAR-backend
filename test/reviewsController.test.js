@@ -170,3 +170,22 @@ test("GSR-06: stops at 10,000 rows and the relog reports rows written", async (t
     assert.equal(log.num_reviews, "10000");
     assert.equal(log.store_reported_reviews, "1943447");
 });
+
+test("GSR-07: reviews are requested in the store country's language", async (t) => {
+    const cases = { JP: "ja", jp: "ja", DE: "de", BR: "pt", TW: "zh-TW", CN: "zh-CN", MX: "es", US: "en", GB: "en", IN: "en", AQ: "en" };
+    const requests = stubStore(t, { reported: 2, pages: [page(0, 2, null)] });
+    for (const [countryCode, lang] of Object.entries(cases)) {
+        requests.length = 0;
+        const { res } = await scrape({ countryCode });
+        assert.equal(res.statusCode, 200);
+        assert.equal(requests.length, 1);
+        assert.equal(requests[0].country, countryCode);
+        assert.equal(requests[0].lang, lang, countryCode);
+    }
+});
+
+test("GSR-07: the relog records the language the reviews were fetched in", async (t) => {
+    stubStore(t, { reported: 2, pages: [page(0, 2, null)] });
+    await scrape({ appId: "com.example.jp", countryCode: "JP" });
+    assert.equal(relog({ appId: "com.example.jp", countryCode: "JP" }).lang, "ja");
+});
