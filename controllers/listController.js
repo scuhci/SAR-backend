@@ -12,6 +12,11 @@ const file_name = path.basename(__filename);
 
 const MAX_APPS_COUNT = 1000000;
 
+// The stored result set depends on the chart, how many apps were asked for and whether
+// permissions were fetched, so all of that goes into the cache key. Otherwise a later scrape
+// of the same chart by another user replaces the data behind someone else's download.
+const cacheKey = (query, num, permissions) => `${query}_n:${num}_p:${permissions}`;
+
 const fetchList = async (collection, category, num, country) => {
     const options = {
         category: category,
@@ -54,8 +59,10 @@ const scrapeList = async (req, res) => {
     const category = req.query.category;
     const country = req.query.country;
     const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
-    const permissions = req.query.includePermissions;
+    const permissions = req.query.includePermissions === "true";
     const query = collection.concat(category, country);
+    let resultsToSend;
+    let csvData;
 
     try {
         // Fetch top list based on the count or the maximum limit
@@ -112,8 +119,8 @@ const scrapeList = async (req, res) => {
             csvData = toplist;
         }
 
-        node_ttl.push(query, csvData, null, 604800);
-        console.log(query);
+        node_ttl.push(cacheKey(query, num, permissions), csvData, null, 604800);
+        console.log(cacheKey(query, num, permissions));
         console.log("CSV stored on backend");
 
         return res.json({
@@ -165,16 +172,18 @@ const downloadTopChartsRelog = (req, res) => {
 const downloadTopChartsCSV = (req, res) => {
     // Use cors middleware for downloadCSV route
     cors()(req, res, () => {
-        if (!csvData) {
-            return res.status(404).json({ error: "CSV data not available." });
-        }
-
         try {
             // Use the existing jsonToCsv method to convert JSON to CSV
             const query = req.query.query;
+            const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
             const permissions = req.query.includePermissions === "true";
-            console.log("Query used for CSV: %s\n", query);
-            var csvInfo = node_ttl.get(query);
+            console.log("Query used for CSV: %s\n", cacheKey(query, num, permissions));
+            const csvInfo = node_ttl.get(cacheKey(query, num, permissions));
+            if (!csvInfo) {
+                return res.status(404).json({
+                    error: "CSV data not available. Scrape this chart again with the same options, then download.",
+                });
+            }
             const csv = jsonToCsv(csvInfo, "app", standardPermissionsList, permissions);
             // Get the current timestamp in the desired format
             const timestamp = new Date().toLocaleString("en-US", {
