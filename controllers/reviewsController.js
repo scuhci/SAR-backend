@@ -49,18 +49,20 @@ const fetchReviews = async (appId, reviewsCount, countryCode) => {
 
     try {
         let reviews = [];
-        let nextToken;
+        const seenIds = new Set();
         let totalFetched = 0;
         let numReviews = reviewsCount && reviewsCount < MAX_REVIEWS_COUNT ? reviewsCount : MAX_REVIEWS_COUNT;
         console.log(`Fetching ${numReviews} Reviews for AppId: ${appId}`);
 
         while (totalFetched < numReviews) {
-            if (nextToken) {
-                options.nextPaginationToken = nextToken;
-            }
-
             const result = await gplay.reviews(options);
-            const newData = result.data || [];
+            // Drop reviews already collected so a repeated page never adds duplicate rows
+            const newData = (result.data || []).filter((review) => {
+                if (review.id == null) return true;
+                if (seenIds.has(review.id)) return false;
+                seenIds.add(review.id);
+                return true;
+            });
 
             // Process each review to include the criteria section
             const processedReviews = newData.map((review) => {
@@ -77,7 +79,14 @@ const fetchReviews = async (appId, reviewsCount, countryCode) => {
             reviews = reviews.concat(processedReviews);
             totalFetched += newData.length;
             console.log(`Total reviews fetched so far: ${totalFetched}`);
-            nextToken = result.nextPaginationToken;
+
+            // The store has no more pages when it returns nothing new, no token,
+            // or the token just used. Otherwise this loop re-sends a request forever.
+            const nextToken = result.nextPaginationToken;
+            if (newData.length === 0 || !nextToken || nextToken === options.nextPaginationToken) {
+                break;
+            }
+            options.nextPaginationToken = nextToken;
         }
 
         if (reviews.length > numReviews) {
