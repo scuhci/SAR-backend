@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("../utilities/loadEnv");
 const { google } = require("googleapis");
 const natural = require("natural");
 const { search, app } = require("google-play-scraper");
@@ -52,9 +52,19 @@ const searchController = async (req, res) => {
 
   res.set("Access-Control-Allow-Origin", "*");
 
-  if (!query) {
-    console.error("Missing search query");
+  // A repeated parameter arrives as an array; reject it rather than crash later.
+  if (typeof query !== "string" || query.trim() === "") {
+    console.error("Missing or malformed search query");
     return res.status(400).json({ error: "Search query is missing.\n" });
+  }
+  if (
+    country !== undefined &&
+    (typeof country !== "string" || !/^[a-z]{2}$/i.test(country))
+  ) {
+    console.error("Malformed country code");
+    return res
+      .status(400)
+      .json({ error: "Country code must be a two-letter code.\n" });
   }
   try {
     const mainResults = await search({ term: query, country: country });
@@ -65,6 +75,11 @@ const searchController = async (req, res) => {
       console.log("App ID passed\n");
       mainResults.splice(0, mainResults.length, fetched_appID);
     } catch (error) {
+      // Throttling or a store outage is not "this is a keyword": fail instead of
+      // starting the related-app fan-out, which would only make it worse.
+      if (error.status === 429 || error.status >= 500) {
+        throw error;
+      }
       // Secondary search for each primary result if required
       console.log("App ID not passed\n");
       for (const mainResult of mainResults) {
@@ -112,6 +127,12 @@ const searchController = async (req, res) => {
       console.log("[%s] %s\n", file_name, result.title);
     }
     console.log("All results fetched\n");
+
+    // The store has no apps for this query: an empty result, not an error.
+    if (allResults.length === 0) {
+      console.log("[%s] Search for '%s' returned no apps\n", file_name, query);
+      return res.json({ totalCount: 0, results: [] });
+    }
     // Fetch additional details (including genre) for each result
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
@@ -441,18 +462,22 @@ const downloadRelog = (req, res) => {
 const downloadCSV = (req, res) => {
   // Use cors middleware for downloadCSV route
   cors()(req, res, () => {
-    if (!csvData) {
-      return res.status(404).json({ error: "CSV data not available." });
+    const query = req.query.query;
+    const permissions = req.query.includePermissions === "true";
+    const country = req.query.countryCode;
+    const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // to retrieve the csv information from node_ttl
+    console.log("pushQuery used for CSV: %s\n", pushQuery);
+    var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
+
+    // Not cached: never searched on this process, or the one-week TTL has passed.
+    if (!csvInfo) {
+      return res.status(404).json({
+        error:
+          "Results for this search were not found or have expired. Please search again.",
+      });
     }
 
     try {
-      // Use the existing jsonToCsv method to convert JSON to CSV
-      const query = req.query.query;
-      const permissions = req.query.includePermissions === "true";
-      const country = req.query.countryCode;
-      const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions; // to retrieve the csv information from node_ttl
-      console.log("pushQuery used for CSV: %s\n", pushQuery);
-      var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
       const csv = jsonToCsv(
         csvInfo,
         "app",

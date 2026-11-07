@@ -48,16 +48,44 @@ const fetchList = async (collection, category, num, country) => {
     }
 };
 
+// Returns an error message for an unusable top charts query string, or null.
+// An empty category is allowed: the frontend sends it for "all apps".
+const validateListQuery = ({ collection, category, country, num }) => {
+    if (typeof collection !== "string" || !Object.values(gplay.collection).includes(collection)) {
+        return `Invalid or missing collection. Expected one of: ${Object.values(gplay.collection).join(", ")}.`;
+    }
+    if (category !== undefined && category !== "" && (typeof category !== "string" || !Object.values(gplay.category).includes(category))) {
+        return `Invalid category ${category}.`;
+    }
+    if (country !== undefined && (typeof country !== "string" || !/^[a-z]{2}$/i.test(country))) {
+        return "Invalid country. Expected a two-letter country code.";
+    }
+    if (num !== undefined && num !== "" && (typeof num !== "string" || !/^[1-9][0-9]*$/.test(num))) {
+        return "Invalid num. Expected a positive integer.";
+    }
+    return null;
+};
+
 const scrapeList = async (req, res) => {
     console.log("Received Top List Scrape Request");
     const collection = req.query.collection;
     const category = req.query.category;
     const country = req.query.country;
-    const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
     const permissions = req.query.includePermissions;
-    const query = collection.concat(category, country);
+    let resultsToSend;
+    let csvData;
+
+    // Validate before touching the values: Express 4 does not catch a rejected async
+    // handler, so a throw outside the try below exits the whole process.
+    const validationError = validateListQuery(req.query);
+    if (validationError) {
+        return res.status(400).json({ error: validationError });
+    }
+    const num = req.query.num ? parseInt(req.query.num, 10) : MAX_APPS_COUNT;
 
     try {
+        const query = collection.concat(category, country);
+
         // Fetch top list based on the count or the maximum limit
         const toplist = await fetchList(collection, category, num, country);
         console.log(`Scraped Top ${toplist.length} Apps for ${collection} and ${category}`);
@@ -165,16 +193,19 @@ const downloadTopChartsRelog = (req, res) => {
 const downloadTopChartsCSV = (req, res) => {
     // Use cors middleware for downloadCSV route
     cors()(req, res, () => {
-        if (!csvData) {
-            return res.status(404).json({ error: "CSV data not available." });
+        const query = req.query.query;
+        const permissions = req.query.includePermissions === "true";
+        console.log("Query used for CSV: %s\n", query);
+        var csvInfo = node_ttl.get(query);
+
+        // Not cached: never scraped on this process, or the one-week TTL has passed.
+        if (!csvInfo) {
+            return res.status(404).json({
+                error: "Results for this search were not found or have expired. Please search again.",
+            });
         }
 
         try {
-            // Use the existing jsonToCsv method to convert JSON to CSV
-            const query = req.query.query;
-            const permissions = req.query.includePermissions === "true";
-            console.log("Query used for CSV: %s\n", query);
-            var csvInfo = node_ttl.get(query);
             const csv = jsonToCsv(csvInfo, "app", standardPermissionsList, permissions);
             // Get the current timestamp in the desired format
             const timestamp = new Date().toLocaleString("en-US", {
