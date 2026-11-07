@@ -6,18 +6,12 @@ const { scrapeReviews, downloadReviewsRelog } = require("./controllers/reviewsCo
 const { downloadTopChartsCSV, downloadTopChartsRelog, scrapeList } = require("./controllers/listController");
 const { startPeriodicHealthCheck, getHealthStatus, checkAllServices } = require("./utilities/healthCheck");
 
-const path = require("path");
 const searchController = require("./controllers/searchController");
 const app = express();
 const port = 5001;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// change for deployment
-const _dirname = path.dirname("");
-const buildpath = path.join(_dirname, "../sar-frontend/build");
-app.use(express.static(buildpath));
 
 // API Endpoints
 
@@ -66,8 +60,11 @@ app.get("/health/scraper", async (req, res) => {
     }
 });
 
-// Fallback
-app.get("/*", (req, res) => res.sendFile("/home/ubuntu/smar/sar-frontend/public/index.html"));
+// Fallback: this process only serves the API (nginx serves the frontend build and
+// its SPA fallback), so anything unmatched is a JSON 404.
+app.use((req, res) => {
+    res.status(404).json({ error: "Not found." });
+});
 
 // Errors thrown by a handler: answer with JSON instead of Express's default HTML
 // page, which includes the stack trace and server paths outside production.

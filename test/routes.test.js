@@ -51,3 +51,24 @@ test("errors raised before a handler (malformed JSON body) come back as JSON, no
     assert.match(res.headers.get("content-type"), /application\/json/);
     assert.doesNotMatch(await res.text(), /node_modules|SyntaxError: /);
 });
+
+test("unknown paths return 404 JSON instead of the frontend template", async () => {
+    for (const [method, path] of [
+        ["GET", "/doesnotexist"],
+        ["GET", "/"],
+        ["GET", "/toplists/sub/path"],
+        ["POST", "/doesnotexist"],
+    ]) {
+        const res = await fetch(`${base}${path}`, { method });
+        const text = await res.text();
+        assert.strictEqual(res.status, 404, `${method} ${path}`);
+        assert.match(res.headers.get("content-type"), /application\/json/, `${method} ${path}`);
+        assert.doesNotMatch(text, /sar-frontend|index\.html|ENOENT|%PUBLIC_URL%/);
+    }
+});
+
+test("/health still answers 200", async () => {
+    const res = await fetch(`${base}/health`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual((await res.json()).status, "ok");
+});
