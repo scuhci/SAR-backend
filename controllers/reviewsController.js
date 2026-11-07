@@ -7,15 +7,51 @@ var node_ttl = new nodeTTL();
 
 const MAX_REVIEWS_COUNT = 10000; //Fixed value for now, can be updated for future development
 
+// Play returns only the reviews written in the requested language (hl), so asking
+// for "en" everywhere returned only English reviews in every market. Use the main
+// language of each store country the frontend offers; every other country uses "en".
+const LANG_COUNTRIES = {
+    ar: "AE BH DZ EG EH IQ JO KW LB LY MA OM PS QA SA SD TN YE",
+    es: "AR BO CL CO CR CU DO EC ES GQ GT HN MX NI PA PE PR PY SV UY VE",
+    fr: "BF BI BJ CD CF CG CI CM DJ FR GA GN HT KM LU MC MG ML NE SN TD TF TG",
+    pt: "AO BR CV GW MZ PT ST TL",
+    de: "AT CH DE LI",
+    nl: "AW BE BQ CW NL SR",
+    ru: "BY KG KZ RU TJ TM",
+    "zh-CN": "CN",
+    "zh-TW": "HK MO TW",
+    el: "CY GR",
+    fa: "AF IR",
+    it: "IT SM",
+    ms: "BN MY",
+    ro: "MD RO",
+    sr: "ME RS",
+    am: "ET", az: "AZ", bg: "BG", bn: "BD", bs: "BA", ca: "AD", cs: "CZ", da: "DK", et: "EE",
+    fi: "FI", he: "IL", hr: "HR", hu: "HU", hy: "AM", id: "ID", is: "IS", ja: "JP", ka: "GE",
+    km: "KH", ko: "KR", lo: "LA", lt: "LT", lv: "LV", mk: "MK", mn: "MN", my: "MM", ne: "NP",
+    no: "NO", pl: "PL", si: "LK", sk: "SK", sl: "SI", sq: "AL", sv: "SE", sw: "TZ", th: "TH",
+    tr: "TR", uk: "UA", uz: "UZ", vi: "VN",
+};
+const LANG_BY_COUNTRY = {};
+for (const [lang, countries] of Object.entries(LANG_COUNTRIES)) {
+    for (const country of countries.split(" ")) LANG_BY_COUNTRY[country] = lang;
+}
+const reviewLang = (countryCode) => LANG_BY_COUNTRY[String(countryCode || "").toUpperCase()] || "en";
+
 const downloadReviewsRelog = (req, res) => {
     cors()(req, res, () => {
         try {
+            // Stored when the scrape finishes: rows written to the CSV, and the
+            // review count shown on the app page (for reference only).
+            const counts = node_ttl.get("c:" + req.query.countryCode + "_a:" + req.query.appId) || {};
             const logInfo = {
                 version: json_raw.version,
                 date_time: new Date(),
                 store: req.query.store,
                 country: req.query.countryCode,
-                num_reviews: node_ttl.get("c:" + req.query.countryCode + "_a:" + req.query.appId),
+                lang: counts.lang,
+                num_reviews: counts.scraped,
+                store_reported_reviews: counts.reported,
                 appId: req.query.appId,
                 sort: req.query.sorting, // must update when we add different sorting
                 info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
@@ -39,28 +75,32 @@ const downloadReviewsRelog = (req, res) => {
     });
 };
 
-const fetchReviews = async (appId, reviewsCount, countryCode) => {
+const fetchReviews = async (appId, countryCode, lang) => {
     const options = {
         appId: appId,
         sort: gplay.sort.NEWEST,
-        lang: "en",
+        lang: lang,
         country: countryCode,
     };
 
     try {
         let reviews = [];
-        let nextToken;
+        const seenIds = new Set();
         let totalFetched = 0;
-        let numReviews = reviewsCount && reviewsCount < MAX_REVIEWS_COUNT ? reviewsCount : MAX_REVIEWS_COUNT;
-        console.log(`Fetching ${numReviews} Reviews for AppId: ${appId}`);
+        // The app page's review count is not what the store will page out (it can be
+        // far lower or higher), so page until the store runs out, up to the cap.
+        const numReviews = MAX_REVIEWS_COUNT;
+        console.log(`Fetching up to ${numReviews} Reviews for AppId: ${appId} (lang: ${lang})`);
 
         while (totalFetched < numReviews) {
-            if (nextToken) {
-                options.nextPaginationToken = nextToken;
-            }
-
             const result = await gplay.reviews(options);
-            const newData = result.data || [];
+            // Drop reviews already collected so a repeated page never adds duplicate rows
+            const newData = (result.data || []).filter((review) => {
+                if (review.id == null) return true;
+                if (seenIds.has(review.id)) return false;
+                seenIds.add(review.id);
+                return true;
+            });
 
             // Process each review to include the criteria section
             const processedReviews = newData.map((review) => {
@@ -77,7 +117,14 @@ const fetchReviews = async (appId, reviewsCount, countryCode) => {
             reviews = reviews.concat(processedReviews);
             totalFetched += newData.length;
             console.log(`Total reviews fetched so far: ${totalFetched}`);
-            nextToken = result.nextPaginationToken;
+
+            // The store has no more pages when it returns nothing new, no token,
+            // or the token just used. Otherwise this loop re-sends a request forever.
+            const nextToken = result.nextPaginationToken;
+            if (newData.length === 0 || !nextToken || nextToken === options.nextPaginationToken) {
+                break;
+            }
+            options.nextPaginationToken = nextToken;
         }
 
         if (reviews.length > numReviews) {
@@ -100,16 +147,18 @@ const scrapeReviews = async (req, res) => {
     // console.log("CountryCode: %s\n", countryCode);
 
     try {
-        // Get the actual count of reviews
+        // The app page's count is only recorded in the relog; it does not limit the scrape
         const appDetails = await gplay.app({ appId: appId, country: countryCode });
         const reviewsCount = appDetails.reviews;
-        const pushQuery = "c:" + countryCode + "_a:" + appId;
-        node_ttl.push(pushQuery, reviewsCount, null, 604800); // 1 week
-        console.log(`App ${appId} contains ${reviewsCount} reviews`);
+        console.log(`App page for ${appId} reports ${reviewsCount} reviews`);
 
-        // Fetch reviews based on the count or the maximum limit
-        const reviews = await fetchReviews(appId, reviewsCount, countryCode);
+        const lang = reviewLang(countryCode);
+        const reviews = await fetchReviews(appId, countryCode, lang);
         console.log(`Received ${reviews.length} reviews for app: ${appId}`);
+
+        // Record what was actually scraped for the relog
+        const pushQuery = "c:" + countryCode + "_a:" + appId;
+        node_ttl.push(pushQuery, { scraped: reviews.length, reported: reviewsCount, lang }, null, 604800); // 1 week
 
         console.log("First 10 reviews:");
         for (let i = 0; i < Math.min(10, reviews.length); i++) {
