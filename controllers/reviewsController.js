@@ -7,19 +7,40 @@ var node_ttl = new nodeTTL();
 
 const MAX_REVIEWS_COUNT = 500; //Fixed value for now, can be updated for future development
 
+// Sorts the App Store review feed actually supports. The frontend sends the
+// dropdown label ("Recency", "Helpfulness", "Rating") as sortBy; Apple has no
+// rating sort, so anything we cannot honor falls back to RECENT and the relog
+// records the feed sort that was really used (mostRecent or mostHelpful).
+const SORT_OPTIONS = {
+  RECENT: iosStore.sort.RECENT,
+  HELPFUL: iosStore.sort.HELPFUL,
+};
+const DEFAULT_SORT = "RECENT";
+
+const resolveSort = (sortBy) => {
+  const value = String(sortBy || "").trim().toUpperCase();
+  if (value === "HELPFUL" || value === "HELPFULNESS" || value === "MOSTHELPFUL") {
+    return "HELPFUL";
+  }
+  return DEFAULT_SORT;
+};
+
 const downloadReviewsRelog = (req, res) => {
   cors()(req, res, () => {
     try {
+      // Written by scrapeReviews once the reviews have actually been fetched
+      const scrapeInfo =
+        node_ttl.get("c:" + req.query.countryCode + "_a:" + req.query.appId) ||
+        {};
       const logInfo = {
         version: json_raw.version,
         date_time: new Date(),
         store: req.query.store,
         country: req.query.countryCode,
-        num_reviews: node_ttl.get(
-          "c:" + req.query.countryCode + "_a:" + req.query.appId
-        ),
+        num_reviews: scrapeInfo.num_reviews, // rows delivered, not Apple's rating count
+        total_ratings: scrapeInfo.total_ratings,
         appId: req.query.appId,
-        sort: req.query.sorting, // must update when we add different sorting
+        sort: scrapeInfo.sort, // the sort that was really used for the scrape
         info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
       // Implement store and country when applicable
@@ -30,7 +51,8 @@ const downloadReviewsRelog = (req, res) => {
       }
       const fileText = logInfo_arr.join("\n");
       console.log(fileText);
-      const filename = "Reproducibility_Log_" + logInfo["query"];
+      const filename =
+        "Reproducibility_Log_" + encodeURI(logInfo.appId) + ".txt";
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${filename}"`
@@ -44,10 +66,10 @@ const downloadReviewsRelog = (req, res) => {
   });
 };
 
-const fetchReviews = async (appId, reviewsCount, countryCode) => {
+const fetchReviews = async (appId, reviewsCount, countryCode, sortName) => {
   const options = {
     appId: appId,
-    sort: iosStore.sort.RECENT,
+    sort: SORT_OPTIONS[sortName] || SORT_OPTIONS[DEFAULT_SORT],
     page: 1,
     country: countryCode,
   };
@@ -64,6 +86,10 @@ const fetchReviews = async (appId, reviewsCount, countryCode) => {
     while (totalFetched < numReviews && options.page < 11) {
       console.log(`Fetching page ${options.page} of reviews\n`);
       const result = await iosStore.reviews(options);
+      if (!result || result.length === 0) {
+        console.log(`Page ${options.page} returned no reviews, stopping`);
+        break; // The store has no more reviews; later pages would be empty too
+      }
       reviews = reviews.concat(result);
       totalFetched = reviews.length;
       console.log(`Total reviews fetched so far: ${totalFetched}`);
@@ -86,6 +112,7 @@ const scrapeReviews = async (req, res) => {
   // console.log("\n");
   const appId = req.query.appId;
   const countryCode = req.query.countryCode;
+  const sortName = resolveSort(req.query.sortBy);
   // console.log("AppID: %s\n", appId);
   // console.log("CountryCode: %s\n", countryCode);
 
@@ -98,12 +125,30 @@ const scrapeReviews = async (req, res) => {
     const reviewsCount = appDetails.reviews;
 
     console.log(`App ${appId} contains ${reviewsCount} reviews`);
-    const pushQuery = "c:" + countryCode + "_a:" + appId;
-    node_ttl.push(pushQuery, reviewsCount, null, 604800); // 1 week
 
     // Fetch reviews based on the count or the maximum limit
-    const reviews = await fetchReviews(appId, reviewsCount, countryCode);
-    console.log(`Received ${reviews.length} reviews for app: ${appId}`);
+    const reviews = await fetchReviews(
+      appId,
+      reviewsCount,
+      countryCode,
+      sortName
+    );
+    console.log(
+      `Received ${reviews.length} reviews for app: ${appId} (sort: ${sortName})`
+    );
+
+    // Record what was actually scraped so the reproducibility log is accurate
+    const pushQuery = "c:" + countryCode + "_a:" + appId;
+    node_ttl.push(
+      pushQuery,
+      {
+        num_reviews: reviews.length, // rows written to the CSV
+        total_ratings: reviewsCount, // Apple's userRatingCount for the app
+        sort: SORT_OPTIONS[sortName], // App Store feed sortby value actually used
+      },
+      null,
+      604800
+    ); // 1 week
 
     console.log("First 10 reviews:");
     for (let i = 0; i < Math.min(10, reviews.length); i++) {

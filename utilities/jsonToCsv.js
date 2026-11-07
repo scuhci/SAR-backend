@@ -25,6 +25,21 @@ function cleanText(text) {
   return cleanedText;
 }
 
+// Turn any cell value into a plain string for cleanText to escape, so arrays
+// and objects do not end up as unescaped "a,b" or "[object Object]".
+function toCellText(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => toCellText(item)).join(', ');
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
 function fixColumns(oldColumns, source)
 {
   let columns = oldColumns;
@@ -34,7 +49,6 @@ function fixColumns(oldColumns, source)
     console.log("Editing App CSV Column Headers");
     columns = columns.map(column => column
     .replace('title', 'appName')
-    .replace('summary', 'description')
     .replace('score', 'avgRating')
     .replace('source', 'scrapedFrom')
     .replace('maxInstalls', 'approximateInstalls')
@@ -69,6 +83,7 @@ function fixColumns(oldColumns, source)
     .replace('score', 'rating')
     .replace('url', 'reviewURL')
     .replace('text', 'reviewText')
+    .replace('title', 'reviewTitle')
     .replace('version', 'versionWhenReviewed')
     .replace('dateReviewedScraped', 'dateScraped'));
   }
@@ -86,6 +101,8 @@ function jsonToCsv(jsonData, source) {
 
   // Adjust columns
   // Define columns to exclude
+  // Unlike Google Play (summary + HTML description), the App Store scraper
+  // only returns 'description', so it stays in the CSV.
   const columnsToExclude = [
     'free',
     'scoreText',
@@ -109,19 +126,13 @@ function jsonToCsv(jsonData, source) {
     'histogram',
     'minInstalls',
     'priceText',
-    'description',
     'categories',
     'preregister',
     'earlyAccessEnabled',
     'isAvailableInPlayPass',
     'similarityScore',
-    'userURL',
+    'userUrl', // reviewer profile link (app-store-scraper spells it userUrl)
   ];
-  // for reviews, 'title' is removed, so we account for that here
-  if(source == 'reviews')
-  {
-    columnsToExclude.push('title');
-  }
   // Remove excluded columns
   columns = columns.filter(column => !columnsToExclude.includes(column));
   columns.push('dateScraped'); // adding this to list the timestamp the data was scraped at
@@ -134,7 +145,7 @@ function jsonToCsv(jsonData, source) {
     const rowValues = [];
     for (const column of columns) {
       if (column in row) {
-        rowValues.push(`"${cleanText(row[column])}"`);
+        rowValues.push(`"${cleanText(toCellText(row[column]))}"`);
         if(rowValues[rowValues.length-1] == `"primary search"`)
         {
           rowValues.pop();
@@ -148,10 +159,10 @@ function jsonToCsv(jsonData, source) {
       }
       else if (column == 'dateScraped')
       {
-        rowValues.push(currentTime);
+        rowValues.push(`"${currentTime.toISOString()}"`); // ISO-8601 UTC, quoted like every other cell
       }
       else {
-        rowValues.push('');
+        rowValues.push('""'); // quoted empty cell
       }
     }
     csvRows.push(rowValues.join(','));
