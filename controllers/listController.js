@@ -94,11 +94,12 @@ const scrapeList = async (req, res) => {
                 const permissionsWithSettings = standardPermissionsList.map((permission) => ({
                     permission: permission,
                     // type: permission.type,
-                    isPermissionRequired: appInfo.permissions.some(
-                        (appPermission) => appPermission.permission === permission,
-                    )
-                        ? true
-                        : false,
+                    // null when the lookup failed, so it does not read as "not required"
+                    isPermissionRequired: appInfo.permissions
+                        ? appInfo.permissions.some(
+                              (appPermission) => appPermission.permission === permission,
+                          )
+                        : null,
                 }));
 
                 // Return appInfo with permissions

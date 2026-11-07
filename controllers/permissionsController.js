@@ -8,7 +8,8 @@ const fetchPermissions = async (results, { concurrency = 4, deadline = Infinity 
     const permissionsResults = await mapWithConcurrency(results, concurrency, async (appInfo) => {
       try {
         const appPermissions = await withRetry(
-          () => fetchPermissionsFromGooglePlay({ appId: appInfo.appId, lang: 'en', country: 'us', requestOptions: REQUEST_OPTIONS }),
+          // permissions() only takes lang; the library has no country option
+          () => fetchPermissionsFromGooglePlay({ appId: appInfo.appId, lang: 'en', requestOptions: REQUEST_OPTIONS }),
           { deadline },
         );
 
@@ -19,10 +20,11 @@ const fetchPermissions = async (results, { concurrency = 4, deadline = Infinity 
         }));
 
         // Append permission details to the appInfo
-        return { ...appInfo, permissions: permissions };
+        return { ...appInfo, permissions: permissions, permissionsFetchFailed: false };
       } catch (error) {
         console.error(`Error fetching permissions for app (${appInfo.appId}):`, error);
-        return { ...appInfo, permissions: [] };
+        // null, not []: a failed lookup must not look like an app that requests no permissions
+        return { ...appInfo, permissions: null, permissionsFetchFailed: true };
       }
     });
 
