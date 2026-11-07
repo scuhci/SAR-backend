@@ -34,3 +34,21 @@ test('GET /toplists with an unknown collection returns 400', async () => {
   assert.match((await res.json()).error, /collection/);
   assert.equal(listCalls(), before);
 });
+
+test('GET /toplists with an unknown category returns 400 instead of the overall chart', async () => {
+  for (const category of ['foo', '99999']) {
+    const before = listCalls();
+    const res = await fetch(
+      `${server.base}/toplists?collection=topfreeapplications&category=${category}&categoryName=X&country=us`
+    );
+    assert.equal(res.status, 400, `category=${category}`);
+    assert.match((await res.json()).error, /category/);
+    assert.equal(listCalls(), before, 'the scraper must not be called for a bad category');
+  }
+});
+
+test('GET /toplists with an empty category still returns the overall chart', async () => {
+  const res = await fetch(`${server.base}/toplists?collection=topfreeapplications&category=&categoryName=&country=us`);
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).totalCount, 2);
+});
