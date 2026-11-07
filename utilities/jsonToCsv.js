@@ -69,6 +69,7 @@ function fixColumns(oldColumns, source)
     .replace('score', 'rating')
     .replace('url', 'reviewURL')
     .replace('text', 'reviewText')
+    .replace('title', 'reviewTitle')
     .replace('version', 'versionWhenReviewed')
     .replace('dateReviewedScraped', 'dateScraped'));
   }
@@ -117,11 +118,6 @@ function jsonToCsv(jsonData, source) {
     'similarityScore',
     'userUrl', // reviewer profile link (app-store-scraper spells it userUrl)
   ];
-  // for reviews, 'title' is removed, so we account for that here
-  if(source == 'reviews')
-  {
-    columnsToExclude.push('title');
-  }
   // Remove excluded columns
   columns = columns.filter(column => !columnsToExclude.includes(column));
   columns.push('dateScraped'); // adding this to list the timestamp the data was scraped at
