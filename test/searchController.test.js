@@ -15,6 +15,7 @@ const notFound = () => Object.assign(new Error("App not found (404)"), { status:
 
 gplay.search = async (opts) => {
     calls.search.push(opts);
+    if (typeof opts.term !== "string") throw new TypeError("term must be a string");
     if (opts.term.startsWith("related to ")) return [];
     return searchResults;
 };
@@ -66,4 +67,44 @@ test("download-csv for a search that is not cached is a 404 even after another s
     const hit = await fetch(`${base}/download-csv?query=com.example.one&includePermissions=false&countryCode=US`);
     assert.strictEqual(hit.status, 200);
     assert.match(await hit.text(), /com\.example\.one/);
+});
+
+test("repeated, blank or missing query and a malformed country are 400s with no store traffic", async () => {
+    for (const qs of [
+        "query=a&query=b&countryCode=US",
+        "query=%20%20&countryCode=US",
+        "countryCode=US",
+        "query=fitness&countryCode=USA",
+        "query=fitness&countryCode=US&countryCode=GB",
+    ]) {
+        const res = await fetch(`${base}/search?${qs}`);
+        assert.strictEqual(res.status, 400, qs);
+    }
+    assert.strictEqual(calls.search.length + calls.app.length, 0);
+});
+
+test("a throttled app-ID probe fails the request instead of starting the keyword fan-out", async () => {
+    probeError = Object.assign(new Error("Response code 429 (Too Many Requests)"), { status: 429 });
+    searchResults = [
+        { appId: "com.example.one", title: "Example One" },
+        { appId: "com.example.two", title: "Example Two" },
+    ];
+    const res = await fetch(`${base}/search?query=fitness&countryCode=US`);
+    assert.strictEqual(res.status, 500);
+    const related = calls.search.filter((c) => c.term.startsWith("related to "));
+    assert.strictEqual(related.length, 0, "no related-app searches after a 429");
+});
+
+test("a keyword (probe 404) still runs the related-app searches", async () => {
+    const res = await fetch(`${base}/search?query=fitness&countryCode=US`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(calls.search.filter((c) => c.term.startsWith("related to ")).length, 1);
+    assert.strictEqual((await res.json()).totalCount, 1);
+});
+
+test("a search the store has no apps for is 200 with zero results, not a 500", async () => {
+    searchResults = [];
+    const res = await fetch(`${base}/search?query=zzzz-no-such-app&countryCode=US`);
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(await res.json(), { totalCount: 0, results: [] });
 });
