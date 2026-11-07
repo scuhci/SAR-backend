@@ -5,7 +5,7 @@ const permissionsRoute = require("./routes/permissionsRoute");
 const { downloadRelog, downloadCSV, addEmailNotification } = require("./controllers/searchController");
 const { scrapeReviews, downloadReviewsRelog } = require("./controllers/reviewsController");
 const { downloadTopChartsCSV, downloadTopChartsRelog, scrapeList } = require("./controllers/listController");
-const { startPeriodicHealthCheck, getHealthStatus, checkAllServices } = require("./utilities/healthCheck");
+const { startPeriodicHealthCheck, getHealthStatus } = require("./utilities/healthCheck");
 
 const searchController = require("./controllers/searchController");
 const app = express();
@@ -41,24 +41,17 @@ app.get("/health", (req, res) => {
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Detailed health check endpoint for scraper services
-app.get("/health/scraper", async (req, res) => {
+// Detailed health check endpoint for scraper services. Serves the result of the last
+// periodic check: only the periodic check runs live store requests and owns the
+// consecutive-failure counter, so polling this endpoint cannot trip or clear alerts.
+app.get("/health/scraper", (req, res) => {
     res.set("Access-Control-Allow-Origin", "*");
 
-    try {
-        // Always run a live check
-        const healthStatus = await checkAllServices();
+    const healthStatus = getHealthStatus();
 
-        // Return 503 if unhealthy, 200 otherwise
-        const statusCode = healthStatus.overall === "unhealthy" ? 503 : 200;
-        res.status(statusCode).json(healthStatus);
-    } catch (error) {
-        console.error("[HEALTH] Error in health endpoint:", error.message);
-        res.status(500).json({
-            error: "Failed to retrieve health status",
-            message: error.message,
-        });
-    }
+    // Return 503 if unhealthy, 200 otherwise
+    const statusCode = healthStatus.overall === "unhealthy" ? 503 : 200;
+    res.status(statusCode).json(healthStatus);
 });
 
 // Fallback: this process only serves the API (nginx serves the frontend build and
