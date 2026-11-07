@@ -69,6 +69,17 @@ app.get("/health/scraper", async (req, res) => {
 // Fallback
 app.get("/*", (req, res) => res.sendFile("/home/ubuntu/smar/sar-frontend/public/index.html"));
 
+// Errors thrown by a handler: answer with JSON instead of Express's default HTML
+// page, which includes the stack trace and server paths outside production.
+app.use((err, req, res, next) => {
+    console.error("Unhandled error on %s %s:", req.method, req.path, err);
+    if (res.headersSent) {
+        return next(err);
+    }
+    const status = err.status || err.statusCode || 500;
+    res.status(status).json({ error: status >= 500 ? "Internal server error." : err.message });
+});
+
 // Safety net: Express 4 does not catch rejected async route handlers, and Node exits
 // on an unhandled rejection, dropping every in-flight request and the in-memory caches.
 process.on("unhandledRejection", (reason) => {

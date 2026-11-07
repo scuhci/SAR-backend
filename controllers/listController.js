@@ -12,6 +12,9 @@ const file_name = path.basename(__filename);
 
 const MAX_APPS_COUNT = 1000000;
 
+// Set by the last top charts scrape; undefined until the first one on this process.
+let csvData;
+
 const fetchList = async (collection, category, num, country) => {
     const options = {
         category: category,
@@ -72,6 +75,7 @@ const scrapeList = async (req, res) => {
     const category = req.query.category;
     const country = req.query.country;
     const permissions = req.query.includePermissions;
+    let resultsToSend;
 
     // Validate before touching the values: Express 4 does not catch a rejected async
     // handler, so a throw outside the try below exits the whole process.

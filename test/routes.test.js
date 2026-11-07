@@ -40,3 +40,14 @@ test("GET /toplists with a bogus category is a 400 JSON error", async () => {
     assert.strictEqual(res.status, 400);
     assert.match((await res.json()).error, /category/i);
 });
+
+test("errors raised before a handler (malformed JSON body) come back as JSON, not an HTML stack trace", async () => {
+    const res = await fetch(`${base}/email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{not json",
+    });
+    assert.strictEqual(res.status, 400);
+    assert.match(res.headers.get("content-type"), /application\/json/);
+    assert.doesNotMatch(await res.text(), /node_modules|SyntaxError: /);
+});
