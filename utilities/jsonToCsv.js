@@ -88,14 +88,82 @@ function fixColumns(oldColumns, source)
   return columns;
 }
 
+// Fixed column order for each CSV, by scraper field name (fixColumns renames
+// them afterwards). This is the order documented in the User Guide, which is
+// also what keyword searches have always produced.
+const appColumnOrder = [
+  'title',
+  'appId',
+  'url',
+  'icon',
+  'developer',
+  'developerId',
+  'currency',
+  'price',
+  'summary',
+  'score',
+  'country',
+  'source',
+  'maxInstalls',
+  'ratings',
+  'reviews',
+  'originalPrice',
+  'discountEndDate',
+  'available',
+  'offersIAP',
+  'IAPRange',
+  'androidVersion',
+  'developerEmail',
+  'developerWebsite',
+  'developerAddress',
+  'privacyPolicy',
+  'genreId',
+  'contentRating',
+  'adSupported',
+  'released',
+  'version',
+  'recentChanges',
+];
+const reviewsColumnOrder = [
+  'id',
+  'date',
+  'score',
+  'url',
+  'text',
+  'replyDate',
+  'replyText',
+  'version',
+  'thumbsUp',
+  'country',
+];
+
+// Put the columns in the fixed order; a field the order does not know about
+// keeps its place after the known ones.
+function orderColumns(columns, source)
+{
+  const order = source == 'reviews' ? reviewsColumnOrder : appColumnOrder;
+  return [
+    ...order.filter(column => columns.includes(column)),
+    ...columns.filter(column => !order.includes(column)),
+  ];
+}
+
 function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions = false) {
   const csvRows = [];
   const currentTime = new Date();
 
   // console.log(jsonData);
 
-  // Extract column headers dynamically from the first object in jsonData
-  let columns = Object.keys(jsonData[0] || {});
+  // Collect the column headers from every row, so a field missing from the
+  // first row is not dropped from the others
+  let columns = [];
+  for (const row of jsonData) {
+    for (const key of Object.keys(row)) {
+      if (!columns.includes(key)) {
+        columns.push(key);
+      }
+    }
+  }
 
   // Adjust columns
   // Define columns to exclude
@@ -140,6 +208,7 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
   }
   // Remove excluded columns
   columns = columns.filter(column => !columnsToExclude.includes(column));
+  columns = orderColumns(columns, source);
   columns.push('dateScraped'); // adding this to list the timestamp the data was scraped at
   // Add standard permissions columns if includePermissions is true
   if (includePermissions) {
