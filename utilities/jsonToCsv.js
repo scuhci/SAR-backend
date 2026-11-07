@@ -31,6 +31,20 @@ function cleanText(text) {
   .replace(/\r?\n|\r/g, ' '); // Replace line breaks with spaces
 }
 
+// Write one value as a CSV cell. Missing values (null/undefined) are an empty
+// cell; dates are ISO-8601 UTC; objects are JSON; everything else is quoted.
+function csvCell(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (value instanceof Date) {
+    value = value.toISOString();
+  } else if (typeof value === 'object') {
+    value = JSON.stringify(value);
+  }
+  return `"${cleanText(String(value))}"`;
+}
+
 function fixColumns(oldColumns, source)
 {
   let columns = oldColumns;
@@ -209,24 +223,20 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
     const rowValues = [];
     for (const column of columns) {
       if (column in row) {
-        rowValues.push(`"${cleanText(row[column])}"`);
-        if(rowValues[rowValues.length-1] == `"primary search"`)
-        {
-          rowValues.pop();
-          rowValues.push(`"keyword search"`);
+        let value = row[column];
+        if (value === 'primary search') {
+          value = 'keyword search';
+        } else if (value === 'related app') {
+          value = 'similar app links';
         }
-        else if(rowValues[rowValues.length-1] == `"related app"`)
-        {
-          rowValues.pop();
-          rowValues.push(`"similar app links"`);
-        }
+        rowValues.push(csvCell(value));
       } else if (source == 'app' && standardPermissionsList.includes(column)) {
         const permission = row.permissions.find(p => p.permission === column);
         rowValues.push(permission ? true : false);
       }
       else if (column == 'dateScraped')
       {
-        rowValues.push(currentTime);
+        rowValues.push(csvCell(currentTime));
       }
       else {
         rowValues.push('');
@@ -237,8 +247,9 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
   // editing column names 
   columns = fixColumns(columns, source);
   // adding them to the top of the CSV
-  csvRows.unshift(columns.map(column => `"${cleanText(column)}"`).join(','));
-  return csvRows.join('\n');
+  csvRows.unshift(columns.map(column => csvCell(column)).join(','));
+  // RFC 4180 separates records with CRLF
+  return csvRows.join('\r\n');
 }
 
 module.exports = {

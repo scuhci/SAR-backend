@@ -486,7 +486,7 @@ const downloadCSV = (req, res) => {
       const suggestedFilename = `${query}_${formattedTimestamp}.csv`;
       res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
 
-      res.setHeader("Content-Type", ["text/csv", "charset=utf-8"]);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
 
       // Set response headers for CSV download
       res.setHeader(
