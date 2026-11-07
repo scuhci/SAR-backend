@@ -3,6 +3,7 @@ const { google } = require("googleapis");
 const natural = require("natural");
 const { search, app } = require("google-play-scraper");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
+const { withRetry } = require("../utilities/storeRequests");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
@@ -112,18 +113,28 @@ const searchController = async (req, res) => {
       console.log("[%s] %s\n", file_name, result.title);
     }
     console.log("All results fetched\n");
-    // Fetch additional details (including genre) for each result
+    // Fetch additional details (including genre) for each result. Transient
+    // store failures are retried; apps that still fail are reported back to
+    // the user instead of silently disappearing from the results.
+    const failedAppIds = new Set();
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
         try {
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          const appDetails = await app({
-            appId: appInfo.appId,
-            country: country,
-          });
+          const appDetails = await withRetry(() =>
+            app({
+              appId: appInfo.appId,
+              country: country,
+            }),
+          );
           return { ...appInfo, ...appDetails };
         } catch (error) {
-          console.error("Error fetching app details:", error);
+          console.error(
+            "Error fetching app details for %s:",
+            appInfo.appId,
+            error,
+          );
+          failedAppIds.add(appInfo.appId);
           return null;
         }
       }),
@@ -148,7 +159,29 @@ const searchController = async (req, res) => {
       return validResults.find((appInfo) => appInfo.appId === appId);
     });
 
+    // An app listed more than once may have failed in one slot and been
+    // fetched in another; only apps with no successful fetch are missing.
+    const fetchedAppIds = new Set(uniqueResults.map((appInfo) => appInfo.appId));
+    const missingAppIds = [...failedAppIds].filter(
+      (appId) => !fetchedAppIds.has(appId),
+    );
+    if (missingAppIds.length > 0) {
+      console.error(
+        "[%s] [%d] apps left out because their details could not be fetched: %s",
+        file_name,
+        missingAppIds.length,
+        missingAppIds.join(", "),
+      );
+    }
+
     if (uniqueResults.length === 0) {
+      if (missingAppIds.length > 0) {
+        return res.status(502).json({
+          error: `Google Play did not return details for any of the ${missingAppIds.length} apps found. Please try again in a few minutes.`,
+          partial: true,
+          failedAppIds: missingAppIds,
+        });
+      }
       throw new Error(`Search for '${query}' did not return any results.`);
     }
 
@@ -316,7 +349,12 @@ const searchController = async (req, res) => {
                                   <p style="margin: 5px 0;"><strong>Include Permissions:</strong> ${
                                     permissions ? "Yes" : "No"
                                   }</p>
-                                  <p style="margin: 5px 0;"><strong>Results Found:</strong> ${csvData.length} apps</p>
+                                  <p style="margin: 5px 0;"><strong>Results Found:</strong> ${csvData.length} apps</p>${
+                                    missingAppIds.length > 0
+                                      ? `
+                                  <p style="margin: 5px 0;"><strong>Apps Not Fetched:</strong> ${missingAppIds.length} (Google Play did not return their details)</p>`
+                                      : ""
+                                  }
                               </div>
                           </div>
                           
@@ -387,10 +425,13 @@ const searchController = async (req, res) => {
     }
 
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
+    node_ttl.push(pushQuery + "_failed", missingAppIds, null, 604800); // for the relog
     console.log("CSV stored on backend");
     return res.json({
       totalCount: uniqueResults.length,
       results: resultsToSend,
+      partial: missingAppIds.length > 0,
+      failedAppIds: missingAppIds,
     });
   } catch (error) {
     console.error("Error occurred during search:", error);
@@ -406,6 +447,15 @@ const downloadRelog = (req, res) => {
   // Info text, Reviews Log?
   cors()(req, res, () => {
     try {
+      // Same key the search stored its results under (see searchController)
+      const pushQuery =
+        "c:" +
+        req.query.countryCode +
+        "_t:" +
+        req.query.query +
+        "_p:" +
+        (req.query.includePermissions === "true");
+      const failedAppIds = node_ttl.get(pushQuery + "_failed") || [];
       const logInfo = {
         version: json_raw.version,
         date_time: new Date(),
@@ -413,6 +463,8 @@ const downloadRelog = (req, res) => {
         country: req.query.countryCode,
         search_query: req.query.query,
         num_results: req.query.totalCount,
+        num_failed: failedAppIds.length,
+        failed_app_ids: failedAppIds.length > 0 ? failedAppIds.join(", ") : "none",
         permissions: req.query.includePermissions,
         info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
