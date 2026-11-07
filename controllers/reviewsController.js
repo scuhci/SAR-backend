@@ -64,6 +64,10 @@ const fetchReviews = async (appId, reviewsCount, countryCode) => {
     while (totalFetched < numReviews && options.page < 11) {
       console.log(`Fetching page ${options.page} of reviews\n`);
       const result = await iosStore.reviews(options);
+      if (!result || result.length === 0) {
+        console.log(`Page ${options.page} returned no reviews, stopping`);
+        break; // The store has no more reviews; later pages would be empty too
+      }
       reviews = reviews.concat(result);
       totalFetched = reviews.length;
       console.log(`Total reviews fetched so far: ${totalFetched}`);
