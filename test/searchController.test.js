@@ -49,7 +49,20 @@ gps.app = async (opts) => {
     store.inFlight--;
   }
 };
-gps.permissions = async () => [];
+gps.permissions = async (opts) => {
+  store.permissionCalls.push(opts.appId);
+  store.permissionsInFlight++;
+  store.maxPermissionsInFlight = Math.max(
+    store.maxPermissionsInFlight,
+    store.permissionsInFlight,
+  );
+  try {
+    await new Promise((resolve) => realSetTimeout(resolve, 2));
+    return [];
+  } finally {
+    store.permissionsInFlight--;
+  }
+};
 
 // Same load order as index.js (routes <-> controller require cycle).
 require("../routes/searchRoutes");
@@ -99,14 +112,24 @@ const reset = ({ primary, related = () => [], failApp = () => null }) => {
     appCalls: [],
     inFlight: 0,
     maxInFlight: 0,
+    permissionCalls: [],
+    permissionsInFlight: 0,
+    maxPermissionsInFlight: 0,
   });
 };
 
-const query = (q) => ({ query: q, countryCode: "US", includePermissions: "false" });
+const query = (q, includePermissions = "false") => ({
+  query: q,
+  countryCode: "US",
+  includePermissions,
+});
 
-const runSearch = async (q) => {
+const runSearch = async (q, includePermissions) => {
   const res = fakeRes();
-  await controller.search({ headers: {}, method: "GET", query: query(q) }, res);
+  await controller.search(
+    { headers: {}, method: "GET", query: query(q, includePermissions) },
+    res,
+  );
   return res;
 };
 
@@ -191,4 +214,31 @@ test("GSR-02: a clean search reports partial: false and the relog says none fail
   assert.equal(res.body.partial, false);
   assert.deepEqual(res.body.failedAppIds, []);
   assert.match(runRelog("clean").body, /^num_failed: 0$/m);
+});
+
+test("GSR-03: each distinct app is fetched once, at most 4 requests at a time", async (t) => {
+  t.after(quiet());
+  const primary = Array.from({ length: 12 }, (_, i) => `com.p${i}`);
+  reset({
+    primary,
+    // every related list repeats the primaries plus a shared app
+    related: () => [...primary, "com.shared"].map(entry),
+  });
+  const res = await runSearch("burst");
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.totalCount, 13);
+  assert.equal(store.appCalls.length, 13);
+  assert.equal(new Set(store.appCalls).size, 13);
+  assert.ok(store.maxInFlight <= 4, `max in flight was ${store.maxInFlight}`);
+  assert.ok(store.maxInFlight > 1, "requests should still run in parallel");
+});
+
+test("GSR-03: permission lookups are bounded to 4 at a time", async (t) => {
+  t.after(quiet());
+  reset({ primary: Array.from({ length: 10 }, (_, i) => `com.p${i}`) });
+  const res = await runSearch("perms", "true");
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.totalCount, 10);
+  assert.equal(store.permissionCalls.length, 10);
+  assert.ok(store.maxPermissionsInFlight <= 4, `max was ${store.maxPermissionsInFlight}`);
 });

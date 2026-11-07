@@ -3,7 +3,11 @@ const { google } = require("googleapis");
 const natural = require("natural");
 const { search, app } = require("google-play-scraper");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
-const { withRetry } = require("../utilities/storeRequests");
+const {
+  REQUEST_OPTIONS,
+  withRetry,
+  mapWithConcurrency,
+} = require("../utilities/storeRequests");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
@@ -20,6 +24,13 @@ const router = require("../routes/searchRoutes");
 let csvData;
 let globalQuery;
 let emailMappings = {};
+
+// At most this many app detail / permission requests run at the same time.
+const STORE_CONCURRENCY = 4;
+// Detail and permission requests are not started or retried once this long has
+// passed since the search began, so the response arrives well inside nginx's
+// 300 s proxy timeout; apps not fetched by then are reported in failedAppIds.
+const SEARCH_TIME_BUDGET_MS = 200 * 1000;
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -48,6 +59,7 @@ const searchController = async (req, res) => {
   const query = req.query.query;
   const permissions = req.query.includePermissions === "true";
   const country = req.query.countryCode;
+  const deadline = Date.now() + SEARCH_TIME_BUDGET_MS;
   console.log("[%s] Query Passed: %s\n", file_name, query);
   console.log("[%s] Country Code Passed: %s\n", file_name, country);
 
@@ -113,19 +125,31 @@ const searchController = async (req, res) => {
       console.log("[%s] %s\n", file_name, result.title);
     }
     console.log("All results fetched\n");
-    // Fetch additional details (including genre) for each result. Transient
-    // store failures are retried; apps that still fail are reported back to
-    // the user instead of silently disappearing from the results.
-    const failedAppIds = new Set();
-    const detailedResults = await Promise.all(
-      allResults.map(async (appInfo) => {
+    // Remove duplicates based on appId before fetching details: the related
+    // lists overlap heavily, and each app only needs to be requested once.
+    const seenAppIds = new Set();
+    const uniqueApps = allResults.filter((appInfo) => {
+      if (!appInfo.appId || seenAppIds.has(appInfo.appId)) return false;
+      seenAppIds.add(appInfo.appId);
+      return true;
+    });
+
+    // Fetch additional details (including genre) for each result, a few at a
+    // time. Transient store failures are retried; apps that still fail are
+    // reported back to the user instead of silently disappearing.
+    const detailedResults = await mapWithConcurrency(
+      uniqueApps,
+      STORE_CONCURRENCY,
+      async (appInfo) => {
         try {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          const appDetails = await withRetry(() =>
-            app({
-              appId: appInfo.appId,
-              country: country,
-            }),
+          const appDetails = await withRetry(
+            () =>
+              app({
+                appId: appInfo.appId,
+                country: country,
+                requestOptions: REQUEST_OPTIONS,
+              }),
+            { deadline },
           );
           return { ...appInfo, ...appDetails };
         } catch (error) {
@@ -134,37 +158,26 @@ const searchController = async (req, res) => {
             appInfo.appId,
             error,
           );
-          failedAppIds.add(appInfo.appId);
           return null;
         }
-      }),
+      },
     );
 
-    // Filter out apps with missing details
-    const validResults = detailedResults.filter((appInfo) => appInfo !== null);
+    // Filter out apps with missing details, keeping their IDs to report
+    const uniqueResults = detailedResults.filter((appInfo) => appInfo !== null);
+    const missingAppIds = uniqueApps
+      .filter((appInfo, index) => detailedResults[index] === null)
+      .map((appInfo) => appInfo.appId);
 
     console.log(
-      "[%s] [%d] validResults:\n-------------------------\n",
+      "[%s] [%d] uniqueResults:\n-------------------------\n",
       file_name,
-      validResults.length,
+      uniqueResults.length,
     );
-    for (const result of validResults) {
+    for (const result of uniqueResults) {
       console.log("[%s] %s\n", file_name, result.title);
     }
 
-    // Remove duplicates based on appId
-    const uniqueResults = Array.from(
-      new Set(validResults.map((appInfo) => appInfo.appId)),
-    ).map((appId) => {
-      return validResults.find((appInfo) => appInfo.appId === appId);
-    });
-
-    // An app listed more than once may have failed in one slot and been
-    // fetched in another; only apps with no successful fetch are missing.
-    const fetchedAppIds = new Set(uniqueResults.map((appInfo) => appInfo.appId));
-    const missingAppIds = [...failedAppIds].filter(
-      (appId) => !fetchedAppIds.has(appId),
-    );
     if (missingAppIds.length > 0) {
       console.error(
         "[%s] [%d] apps left out because their details could not be fetched: %s",
@@ -228,8 +241,10 @@ const searchController = async (req, res) => {
     if (permissions) {
       // If includePermissions is true, call the fetchPermissions function
       console.log("Calling fetchPermissions method");
-      const permissionsResults =
-        await permissionsController.fetchPermissions(uniqueResults);
+      const permissionsResults = await permissionsController.fetchPermissions(
+        uniqueResults,
+        { concurrency: STORE_CONCURRENCY, deadline },
+      );
 
       // Process permissions data for the sliced 5 results
       const processedPermissionsResults = permissionsResults.map((appInfo) => {
