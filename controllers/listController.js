@@ -4,8 +4,8 @@ const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
-const nodeTTL = require("node-ttl");
-var node_ttl = new nodeTTL();
+const { createResultCache } = require("../utilities/resultCache");
+var node_ttl = createResultCache();
 
 const cors = require("cors");
 const path = require("path");
