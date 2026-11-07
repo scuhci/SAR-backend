@@ -54,7 +54,10 @@ const searchController = async (req, res) => {
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
     try {
-      const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
+      // checking if our query is a valid app ID: all digits is the numeric id
+      // from an App Store URL, anything else is tried as a bundle id
+      const lookup = /^\d+$/.test(query) ? { id: query } : { appId: query };
+      const fetched_appID = await app({ ...lookup, country: country });
       console.log("App ID passed\n");
       mainResults.splice(0, mainResults.length, fetched_appID);
     } catch (error) {
@@ -100,6 +103,11 @@ const searchController = async (req, res) => {
       console.log("[%s] %s\n", file_name, result.title);
     }
     console.log("All results fetched\n");
+
+    // Apple returned no apps for this term: an empty result, not a server error.
+    if (allResults.length === 0) {
+      return res.json({ totalCount: 0, results: [] });
+    }
     // Fetch additional details (including genre) for each result
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
@@ -136,8 +144,9 @@ const searchController = async (req, res) => {
       return validResults.find((appInfo) => appInfo.appId === appId);
     });
 
+    // Apple returned hits but every detail lookup failed: still an error.
     if (uniqueResults.length === 0) {
-      throw new Error(`Search for '${query}' did not return any results.`);
+      throw new Error(`No app details could be fetched for '${query}'.`);
     }
 
     // Calculate similarity score for all unique results
@@ -158,10 +167,6 @@ const searchController = async (req, res) => {
         result.title,
         result.similarityScore
       );
-    }
-
-    if (resultsWithSimilarityScore.length === 0) {
-      throw new Error(`Search for '${query}' did not return any results.`);
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
@@ -258,6 +263,9 @@ const downloadCSV = (req, res) => {
       const pushQuery = "c:" + country + "_t:" + query; // to retrieve the csv information from node_ttl
       console.log("pushQuery used for CSV: %s\n", pushQuery);
       var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
+      if (!csvInfo) {
+        return res.status(404).json({ error: "CSV data not available." });
+      }
       const csv = jsonToCsv(
         csvInfo,
         "app"

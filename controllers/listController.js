@@ -1,8 +1,9 @@
-const { list } = require("app-store-scraper");
+const { list, collection: collections, category: categories } = require("app-store-scraper");
 const { jsonToCsv } = require('../utilities/jsonToCsv');
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
 var node_ttl = new nodeTTL();
+let csvData; // set by scrapeList; was an implicit global, so a fresh process threw ReferenceError
 
 const cors = require("cors");
 const path = require("path");
@@ -42,11 +43,23 @@ const fetchList = async (collection, category, num, country) => {
   const scrapeList = async (req, res) => {
     console.log("Received Top List Scrape Request");
     const collection = req.query.collection;
-    const category = Number(req.query.category);
+    // Empty means "all categories". Anything else must be a genre id the
+    // scraper knows: Number("foo") is NaN, which the library silently treats
+    // as no category and returns the overall chart.
+    const category = req.query.category ? Number(req.query.category) : undefined;
     const categoryName = req.query.categoryName;
     const country = req.query.country;
     const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
     const permissions = false;
+
+    // Validate before touching collection: a missing one used to throw here,
+    // outside the try block, and the unhandled rejection killed the process.
+    if (!Object.values(collections).includes(collection)) {
+      return res.status(400).json({ error: "Missing or invalid 'collection' query parameter." });
+    }
+    if (category !== undefined && !Object.values(categories).includes(category)) {
+      return res.status(400).json({ error: "Invalid 'category' query parameter." });
+    }
     const query = collection.concat(categoryName, country);
   
     try {
@@ -173,6 +186,9 @@ const fetchList = async (collection, category, num, country) => {
         const permissions = req.query.includePermissions === 'true';
         console.log("Query used for CSV: %s\n", query);
         var csvInfo = node_ttl.get(query);
+        if (!csvInfo) {
+          return res.status(404).json({ error: "CSV data not available." });
+        }
         const csv = jsonToCsv(csvInfo, 'app');
         // Get the current timestamp in the desired format
         const timestamp = new Date().toLocaleString('en-US', {
