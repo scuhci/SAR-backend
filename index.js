@@ -6,7 +6,7 @@ const { scrapeList, downloadTopChartsCSV, downloadTopChartsRelog} = require('./c
 const { startPeriodicHealthCheck, getHealthStatus, checkAllServices } = require('./utilities/healthCheck');
 const path = require('path');
 const app = express();
-const port = 5002;
+const port = process.env.PORT || 5002;
 
 // change for deployment
 const _dirname = path.dirname("");
@@ -46,6 +46,12 @@ app.get('/health/scraper', async (req, res) => {
       message: error.message 
     });
   }
+});
+
+// Log a rejected promise from an async route handler instead of letting it
+// terminate the process (and every other user's request with it).
+process.on('unhandledRejection', (reason) => {
+  console.error('[SERVER] Unhandled promise rejection:', reason);
 });
 
 app.listen(port, () => {

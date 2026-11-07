@@ -1,4 +1,4 @@
-const { list } = require("app-store-scraper");
+const { list, collection: collections } = require("app-store-scraper");
 const { jsonToCsv } = require('../utilities/jsonToCsv');
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
@@ -47,6 +47,12 @@ const fetchList = async (collection, category, num, country) => {
     const country = req.query.country;
     const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
     const permissions = false;
+
+    // Validate before touching collection: a missing one used to throw here,
+    // outside the try block, and the unhandled rejection killed the process.
+    if (!Object.values(collections).includes(collection)) {
+      return res.status(400).json({ error: "Missing or invalid 'collection' query parameter." });
+    }
     const query = collection.concat(categoryName, country);
   
     try {
