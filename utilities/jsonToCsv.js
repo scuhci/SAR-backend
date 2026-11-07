@@ -25,6 +25,21 @@ function cleanText(text) {
   return cleanedText;
 }
 
+// Turn any cell value into a plain string for cleanText to escape, so arrays
+// and objects do not end up as unescaped "a,b" or "[object Object]".
+function toCellText(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => toCellText(item)).join(', ');
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
 function fixColumns(oldColumns, source)
 {
   let columns = oldColumns;
@@ -130,7 +145,7 @@ function jsonToCsv(jsonData, source) {
     const rowValues = [];
     for (const column of columns) {
       if (column in row) {
-        rowValues.push(`"${cleanText(row[column])}"`);
+        rowValues.push(`"${cleanText(toCellText(row[column]))}"`);
         if(rowValues[rowValues.length-1] == `"primary search"`)
         {
           rowValues.pop();
@@ -144,10 +159,10 @@ function jsonToCsv(jsonData, source) {
       }
       else if (column == 'dateScraped')
       {
-        rowValues.push(currentTime);
+        rowValues.push(`"${currentTime.toISOString()}"`); // ISO-8601 UTC, quoted like every other cell
       }
       else {
-        rowValues.push('');
+        rowValues.push('""'); // quoted empty cell
       }
     }
     csvRows.push(rowValues.join(','));
