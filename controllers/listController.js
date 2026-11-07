@@ -59,7 +59,13 @@ const fetchList = async (collection, category, num, country) => {
   
     try {
       // Fetch top list based on the count or the maximum limit
-      const toplist = await fetchList(collection, category, num, country);
+      const fetchedList = await fetchList(collection, category, num, country);
+      // Tag each row with the storefront and chart it came from, like search results do
+      const toplist = fetchedList.map((result) => ({
+        ...result,
+        country: country,
+        collection: collection,
+      }));
       console.log(`Scraped Top ${toplist.length} Apps for ${collection} and ${category}`);
       
       /*
