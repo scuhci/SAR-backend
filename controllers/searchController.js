@@ -449,11 +449,17 @@ const searchController = async (req, res) => {
                   ],
                 },
                 (error) => {
-                  if (error) console.log("Email Error:", error);
+                  // The error text can include the recipient; log the code only.
+                  if (error)
+                    console.log(
+                      "Email Error:",
+                      error.code || "unknown",
+                      error.responseCode || "",
+                    );
                 },
               );
             } catch (e) {
-              console.log("Error sending an email: ", e);
+              console.log("Error sending an email: ", e && e.code);
             }
           }
           console.log("Email Sent");
@@ -582,10 +588,14 @@ const downloadCSV = (req, res) => {
 const addEmailNotification = (req, res) => {
   cors()(req, res, () => {
     try {
-      console.log("Received request on /search/email endpoint", req.query);
-
-      const queryId = req.query?.queryId;
-      const email = req.query?.email;
+      // The address belongs in the JSON body, not the URL (where it ends up in
+      // access logs and browser history). The query string is still read as a
+      // fallback so a frontend that has not been updated keeps working; drop
+      // it once the frontend only sends the body. Never log the address.
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const queryId = body.queryId ?? req.query?.queryId;
+      const email = body.email ?? req.query?.email;
+      console.log("Received request on /email endpoint");
 
       if (!queryId || !email)
         return res.status(400).json({

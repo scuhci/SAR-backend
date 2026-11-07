@@ -18,10 +18,17 @@ gps.search = async ({ term }) => [fixtureApp(term)];
 gps.app = async ({ appId }) => fixtureApp(appId);
 
 const sent = [];
+let failSends = false;
 nodemailer.createTransport = () => ({
   sendMail(opts, cb) {
     sent.push(opts);
-    if (cb) cb(null, { accepted: [opts.to] });
+    if (!cb) return;
+    if (failSends) {
+      const err = new Error(`Recipient address rejected: <${opts.to}>`);
+      err.code = "EENVELOPE";
+      err.responseCode = 550;
+      cb(err);
+    } else cb(null, { accepted: [opts.to] });
   },
 });
 
@@ -79,6 +86,7 @@ after(async () => {
 
 beforeEach(() => {
   sent.length = 0;
+  failSends = false;
 });
 
 // Every test uses its own client IP (via X-Forwarded-For from loopback, as
@@ -227,4 +235,65 @@ test("escapes the search term in the mail body and attachment name", async () =>
   // Registration is consumed once mailed.
   assert.equal((await runSearch(query)).status, 200);
   assert.equal(sent.length, 1);
+});
+
+// SEC-04: the address travels in the JSON body; the query-string form is kept
+// working until the frontend stops sending it.
+const registerJson = (body, ip, rawQuery = "") =>
+  fetch(`${baseUrl}/email${rawQuery}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
+    body: JSON.stringify(body),
+  });
+
+test("accepts the address in the JSON body", async () => {
+  const queryId = queryIdFor("json-body");
+  const res = await registerJson({ email: "body@uni.edu", queryId }, freshIp());
+  assert.equal(res.status, 200);
+  await runSearch("json-body");
+  assert.deepEqual(sent.map((m) => m.to), ["body@uni.edu"]);
+});
+
+test("still accepts the query-string form", async () => {
+  const res = await register("qs@uni.edu", queryIdFor("query-form"), freshIp());
+  assert.equal(res.status, 200);
+  await runSearch("query-form");
+  assert.deepEqual(sent.map((m) => m.to), ["qs@uni.edu"]);
+});
+
+test("prefers the body when both are sent, as the current frontend does", async () => {
+  // The live frontend builds ?email=${email} without encoding, so a + in the
+  // address arrives as a space in the query string. The body is intact.
+  const queryId = queryIdFor("both-forms");
+  const res = await registerJson(
+    { email: "first+tag@uni.edu", queryId },
+    freshIp(),
+    `?email=first+tag@uni.edu&queryId=${encodeURIComponent(queryId)}`,
+  );
+  assert.equal(res.status, 200);
+  await runSearch("both-forms");
+  assert.deepEqual(sent.map((m) => m.to), ["first+tag@uni.edu"]);
+});
+
+test("never writes the address to the server log", async () => {
+  const address = "private.person+smar@uni.edu";
+  console.log.mock.resetCalls();
+  console.error.mock.resetCalls();
+  failSends = true; // also cover the send-failure log line
+  const queryId = queryIdFor("log-check");
+  assert.equal(
+    (await register(address, queryId, freshIp())).status,
+    200,
+  );
+  assert.equal(
+    (await registerJson({ email: address, queryId }, freshIp())).status,
+    200,
+  );
+  await runSearch("log-check");
+  assert.equal(sent.length, 1);
+  const logged = [...console.log.mock.calls, ...console.error.mock.calls]
+    .flatMap((c) => c.arguments)
+    .map((a) => (typeof a === "string" ? a : JSON.stringify(a) + String(a)))
+    .join("\n");
+  assert.ok(!logged.includes("private.person"), "address appeared in a log line");
 });
