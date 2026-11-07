@@ -48,6 +48,14 @@ app.get('/health/scraper', async (req, res) => {
   }
 });
 
+// Answer unexpected errors with JSON. Express's default handler sends an HTML
+// page with the stack trace and server paths.
+app.use((err, req, res, next) => {
+  console.error('[SERVER] Unhandled error:', err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'An unexpected error occurred.' });
+});
+
 // Log a rejected promise from an async route handler instead of letting it
 // terminate the process (and every other user's request with it).
 process.on('unhandledRejection', (reason) => {

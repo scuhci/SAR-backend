@@ -258,6 +258,9 @@ const downloadCSV = (req, res) => {
       const pushQuery = "c:" + country + "_t:" + query; // to retrieve the csv information from node_ttl
       console.log("pushQuery used for CSV: %s\n", pushQuery);
       var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
+      if (!csvInfo) {
+        return res.status(404).json({ error: "CSV data not available." });
+      }
       const csv = jsonToCsv(
         csvInfo,
         "app"

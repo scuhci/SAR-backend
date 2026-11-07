@@ -3,6 +3,7 @@ const { jsonToCsv } = require('../utilities/jsonToCsv');
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
 var node_ttl = new nodeTTL();
+let csvData; // set by scrapeList; was an implicit global, so a fresh process threw ReferenceError
 
 const cors = require("cors");
 const path = require("path");
@@ -185,6 +186,9 @@ const fetchList = async (collection, category, num, country) => {
         const permissions = req.query.includePermissions === 'true';
         console.log("Query used for CSV: %s\n", query);
         var csvInfo = node_ttl.get(query);
+        if (!csvInfo) {
+          return res.status(404).json({ error: "CSV data not available." });
+        }
         const csv = jsonToCsv(csvInfo, 'app');
         // Get the current timestamp in the desired format
         const timestamp = new Date().toLocaleString('en-US', {
