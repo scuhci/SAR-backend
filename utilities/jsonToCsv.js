@@ -34,7 +34,6 @@ function fixColumns(oldColumns, source)
     console.log("Editing App CSV Column Headers");
     columns = columns.map(column => column
     .replace('title', 'appName')
-    .replace('summary', 'description')
     .replace('score', 'avgRating')
     .replace('source', 'scrapedFrom')
     .replace('maxInstalls', 'approximateInstalls')
@@ -87,6 +86,8 @@ function jsonToCsv(jsonData, source) {
 
   // Adjust columns
   // Define columns to exclude
+  // Unlike Google Play (summary + HTML description), the App Store scraper
+  // only returns 'description', so it stays in the CSV.
   const columnsToExclude = [
     'free',
     'scoreText',
@@ -110,7 +111,6 @@ function jsonToCsv(jsonData, source) {
     'histogram',
     'minInstalls',
     'priceText',
-    'description',
     'categories',
     'preregister',
     'earlyAccessEnabled',
