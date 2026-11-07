@@ -115,7 +115,7 @@ function jsonToCsv(jsonData, source) {
     'earlyAccessEnabled',
     'isAvailableInPlayPass',
     'similarityScore',
-    'userURL',
+    'userUrl', // reviewer profile link (app-store-scraper spells it userUrl)
   ];
   // for reviews, 'title' is removed, so we account for that here
   if(source == 'reviews')
