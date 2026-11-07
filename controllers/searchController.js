@@ -95,7 +95,13 @@ const searchController = async (req, res) => {
       const similarLists = await mapThrottled(mainResults, async (mainResult) => {
         console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
         try {
-          return await similar({appId: mainResult.appId});
+          // The numeric id skips the bundle-id lookup similar() would otherwise
+          // make; without country the library falls back to the US storefront.
+          return await similar({
+            id: mainResult.id,
+            appId: mainResult.appId,
+            country: country,
+          });
         } catch (error) {
           console.error(`Unable to fetch related apps for appID: ${mainResult.appId}`);
           relatedFailedFor.push(mainResult.appId);

@@ -159,3 +159,19 @@ test("failed lookups are reported in the response instead of silently dropped", 
   assert.deepStrictEqual([...res.body.failedAppIds].sort(), ["com.example.sim2", "com.example.three"]);
   assert.deepStrictEqual(res.body.relatedFailedFor, ["com.example.two"]);
 });
+
+test("related apps are fetched from the storefront the user selected", async () => {
+  const res = makeRes();
+  await search(makeReq({ countryCode: "gb" }), res);
+
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(calls.similar.length, 3);
+  for (const call of calls.similar) {
+    assert.strictEqual(call.country, "gb", "similar() must receive the requested country");
+    // The numeric id saves similar() an extra bundle-id lookup per primary result.
+    assert.ok(appIdById[call.id], `similar() called without a numeric id: ${JSON.stringify(call)}`);
+  }
+  const related = res.body.results.filter((r) => r.source === "related app");
+  assert.strictEqual(related.length, 6);
+  assert.ok(related.every((r) => r.country === "gb"));
+});
