@@ -1,3 +1,23 @@
+// Turn an HTML field from google-play-scraper (summary, recentChanges) into the
+// single-line plain text shown on the website and written to the CSV. The
+// controllers call this once per field; it does not do any CSV escaping.
+function htmlToText(html) {
+  if (typeof html !== 'string') {
+    return html;
+  }
+
+  return html
+  .replace(/<br\s*\/?>/gi, ' ') // HTML line breaks become spaces
+  .replace(/<[^>]+>/g, '') // Remove the remaining HTML tags
+  .replace(/&quot;/g, '"')
+  .replace(/&apos;/g, "'")
+  .replace(/&#39;/g, "'")
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/&amp;/g, '&') // last, so "&amp;lt;" stays "&lt;"
+  .replace(/\r?\n|\r/g, ' '); // Other line breaks become spaces
+}
+
 function cleanText(text) {
   if (typeof text !== 'string') {
     return text;
@@ -167,6 +187,7 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
 }
 
 module.exports = {
+  htmlToText,
   cleanText, 
   jsonToCsv,
 };

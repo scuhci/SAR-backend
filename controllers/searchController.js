@@ -2,7 +2,7 @@ require("dotenv").config();
 const { google } = require("googleapis");
 const natural = require("natural");
 const { search, app } = require("google-play-scraper");
-const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
+const { htmlToText, jsonToCsv } = require("../utilities/jsonToCsv");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
@@ -176,16 +176,18 @@ const searchController = async (req, res) => {
       throw new Error(`Search for '${query}' did not return any results.`);
     }
 
-    // Apply cleanText to the summary and recentChanges properties of each result
+    // Turn the HTML summary and recentChanges into plain text, in place, so the
+    // website and the cached CSV data both carry it. No CSV escaping here:
+    // jsonToCsv escapes each cell itself.
     const cleanedLimitedResults = resultsWithSimilarityScore.map((result) => {
       // Clean the summary column
       if (result.summary) {
-        result.summary = cleanText(result.summary);
+        result.summary = htmlToText(result.summary);
       }
 
       // Clean the recentChanges column
       if (result.recentChanges) {
-        result.recentChanges = cleanText(result.recentChanges);
+        result.recentChanges = htmlToText(result.recentChanges);
       }
 
       return result;
