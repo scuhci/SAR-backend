@@ -146,8 +146,13 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
           rowValues.push(`"similar app links"`);
         }
       } else if (source == 'app' && standardPermissionsList.includes(column)) {
-        const permission = row.permissions.find(p => p.permission === column);
-        rowValues.push(permission ? true : false);
+        if (row.permissions) {
+          const permission = row.permissions.find(p => p.permission === column);
+          rowValues.push(permission ? true : false);
+        } else {
+          // lookup failed: leave the cell empty, the permissionsFetchFailed column says why
+          rowValues.push('');
+        }
       }
       else if (column == 'dateScraped')
       {

@@ -3,6 +3,11 @@ const { google } = require("googleapis");
 const natural = require("natural");
 const { search, app } = require("google-play-scraper");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
+const {
+  REQUEST_OPTIONS,
+  withRetry,
+  mapWithConcurrency,
+} = require("../utilities/storeRequests");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
@@ -19,6 +24,13 @@ const router = require("../routes/searchRoutes");
 let csvData;
 let globalQuery;
 let emailMappings = {};
+
+// At most this many app detail / permission requests run at the same time.
+const STORE_CONCURRENCY = 4;
+// Detail and permission requests are not started or retried once this long has
+// passed since the search began, so the response arrives well inside nginx's
+// 300 s proxy timeout; apps not fetched by then are reported in failedAppIds.
+const SEARCH_TIME_BUDGET_MS = 200 * 1000;
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -47,6 +59,7 @@ const searchController = async (req, res) => {
   const query = req.query.query;
   const permissions = req.query.includePermissions === "true";
   const country = req.query.countryCode;
+  const deadline = Date.now() + SEARCH_TIME_BUDGET_MS;
   console.log("[%s] Query Passed: %s\n", file_name, query);
   console.log("[%s] Country Code Passed: %s\n", file_name, country);
 
@@ -112,43 +125,76 @@ const searchController = async (req, res) => {
       console.log("[%s] %s\n", file_name, result.title);
     }
     console.log("All results fetched\n");
-    // Fetch additional details (including genre) for each result
-    const detailedResults = await Promise.all(
-      allResults.map(async (appInfo) => {
+    // Remove duplicates based on appId before fetching details: the related
+    // lists overlap heavily, and each app only needs to be requested once.
+    const seenAppIds = new Set();
+    const uniqueApps = allResults.filter((appInfo) => {
+      if (!appInfo.appId || seenAppIds.has(appInfo.appId)) return false;
+      seenAppIds.add(appInfo.appId);
+      return true;
+    });
+
+    // Fetch additional details (including genre) for each result, a few at a
+    // time. Transient store failures are retried; apps that still fail are
+    // reported back to the user instead of silently disappearing.
+    const detailedResults = await mapWithConcurrency(
+      uniqueApps,
+      STORE_CONCURRENCY,
+      async (appInfo) => {
         try {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          const appDetails = await app({
-            appId: appInfo.appId,
-            country: country,
-          });
+          const appDetails = await withRetry(
+            () =>
+              app({
+                appId: appInfo.appId,
+                country: country,
+                requestOptions: REQUEST_OPTIONS,
+              }),
+            { deadline },
+          );
           return { ...appInfo, ...appDetails };
         } catch (error) {
-          console.error("Error fetching app details:", error);
+          console.error(
+            "Error fetching app details for %s:",
+            appInfo.appId,
+            error,
+          );
           return null;
         }
-      }),
+      },
     );
 
-    // Filter out apps with missing details
-    const validResults = detailedResults.filter((appInfo) => appInfo !== null);
+    // Filter out apps with missing details, keeping their IDs to report
+    const uniqueResults = detailedResults.filter((appInfo) => appInfo !== null);
+    const missingAppIds = uniqueApps
+      .filter((appInfo, index) => detailedResults[index] === null)
+      .map((appInfo) => appInfo.appId);
 
     console.log(
-      "[%s] [%d] validResults:\n-------------------------\n",
+      "[%s] [%d] uniqueResults:\n-------------------------\n",
       file_name,
-      validResults.length,
+      uniqueResults.length,
     );
-    for (const result of validResults) {
+    for (const result of uniqueResults) {
       console.log("[%s] %s\n", file_name, result.title);
     }
 
-    // Remove duplicates based on appId
-    const uniqueResults = Array.from(
-      new Set(validResults.map((appInfo) => appInfo.appId)),
-    ).map((appId) => {
-      return validResults.find((appInfo) => appInfo.appId === appId);
-    });
+    if (missingAppIds.length > 0) {
+      console.error(
+        "[%s] [%d] apps left out because their details could not be fetched: %s",
+        file_name,
+        missingAppIds.length,
+        missingAppIds.join(", "),
+      );
+    }
 
     if (uniqueResults.length === 0) {
+      if (missingAppIds.length > 0) {
+        return res.status(502).json({
+          error: `Google Play did not return details for any of the ${missingAppIds.length} apps found. Please try again in a few minutes.`,
+          partial: true,
+          failedAppIds: missingAppIds,
+        });
+      }
       throw new Error(`Search for '${query}' did not return any results.`);
     }
 
@@ -195,8 +241,10 @@ const searchController = async (req, res) => {
     if (permissions) {
       // If includePermissions is true, call the fetchPermissions function
       console.log("Calling fetchPermissions method");
-      const permissionsResults =
-        await permissionsController.fetchPermissions(uniqueResults);
+      const permissionsResults = await permissionsController.fetchPermissions(
+        uniqueResults,
+        { concurrency: STORE_CONCURRENCY, deadline },
+      );
 
       // Process permissions data for the sliced 5 results
       const processedPermissionsResults = permissionsResults.map((appInfo) => {
@@ -204,11 +252,12 @@ const searchController = async (req, res) => {
           (permission) => ({
             permission: permission,
             // type: permission.type,
-            isPermissionRequired: appInfo.permissions.some(
-              (appPermission) => appPermission.permission === permission,
-            )
-              ? true
-              : false,
+            // null when the lookup failed, so it does not read as "not required"
+            isPermissionRequired: appInfo.permissions
+              ? appInfo.permissions.some(
+                  (appPermission) => appPermission.permission === permission,
+                )
+              : null,
           }),
         );
 
@@ -316,7 +365,12 @@ const searchController = async (req, res) => {
                                   <p style="margin: 5px 0;"><strong>Include Permissions:</strong> ${
                                     permissions ? "Yes" : "No"
                                   }</p>
-                                  <p style="margin: 5px 0;"><strong>Results Found:</strong> ${csvData.length} apps</p>
+                                  <p style="margin: 5px 0;"><strong>Results Found:</strong> ${csvData.length} apps</p>${
+                                    missingAppIds.length > 0
+                                      ? `
+                                  <p style="margin: 5px 0;"><strong>Apps Not Fetched:</strong> ${missingAppIds.length} (Google Play did not return their details)</p>`
+                                      : ""
+                                  }
                               </div>
                           </div>
                           
@@ -387,10 +441,13 @@ const searchController = async (req, res) => {
     }
 
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
+    node_ttl.push(pushQuery + "_failed", missingAppIds, null, 604800); // for the relog
     console.log("CSV stored on backend");
     return res.json({
       totalCount: uniqueResults.length,
       results: resultsToSend,
+      partial: missingAppIds.length > 0,
+      failedAppIds: missingAppIds,
     });
   } catch (error) {
     console.error("Error occurred during search:", error);
@@ -406,6 +463,15 @@ const downloadRelog = (req, res) => {
   // Info text, Reviews Log?
   cors()(req, res, () => {
     try {
+      // Same key the search stored its results under (see searchController)
+      const pushQuery =
+        "c:" +
+        req.query.countryCode +
+        "_t:" +
+        req.query.query +
+        "_p:" +
+        (req.query.includePermissions === "true");
+      const failedAppIds = node_ttl.get(pushQuery + "_failed") || [];
       const logInfo = {
         version: json_raw.version,
         date_time: new Date(),
@@ -413,6 +479,8 @@ const downloadRelog = (req, res) => {
         country: req.query.countryCode,
         search_query: req.query.query,
         num_results: req.query.totalCount,
+        num_failed: failedAppIds.length,
+        failed_app_ids: failedAppIds.length > 0 ? failedAppIds.join(", ") : "none",
         permissions: req.query.includePermissions,
         info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
