@@ -10,12 +10,16 @@ const MAX_REVIEWS_COUNT = 10000; //Fixed value for now, can be updated for futur
 const downloadReviewsRelog = (req, res) => {
     cors()(req, res, () => {
         try {
+            // Stored when the scrape finishes: rows written to the CSV, and the
+            // review count shown on the app page (for reference only).
+            const counts = node_ttl.get("c:" + req.query.countryCode + "_a:" + req.query.appId) || {};
             const logInfo = {
                 version: json_raw.version,
                 date_time: new Date(),
                 store: req.query.store,
                 country: req.query.countryCode,
-                num_reviews: node_ttl.get("c:" + req.query.countryCode + "_a:" + req.query.appId),
+                num_reviews: counts.scraped,
+                store_reported_reviews: counts.reported,
                 appId: req.query.appId,
                 sort: req.query.sorting, // must update when we add different sorting
                 info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
@@ -39,7 +43,7 @@ const downloadReviewsRelog = (req, res) => {
     });
 };
 
-const fetchReviews = async (appId, reviewsCount, countryCode) => {
+const fetchReviews = async (appId, countryCode) => {
     const options = {
         appId: appId,
         sort: gplay.sort.NEWEST,
@@ -51,8 +55,10 @@ const fetchReviews = async (appId, reviewsCount, countryCode) => {
         let reviews = [];
         const seenIds = new Set();
         let totalFetched = 0;
-        let numReviews = reviewsCount && reviewsCount < MAX_REVIEWS_COUNT ? reviewsCount : MAX_REVIEWS_COUNT;
-        console.log(`Fetching ${numReviews} Reviews for AppId: ${appId}`);
+        // The app page's review count is not what the store will page out (it can be
+        // far lower or higher), so page until the store runs out, up to the cap.
+        const numReviews = MAX_REVIEWS_COUNT;
+        console.log(`Fetching up to ${numReviews} Reviews for AppId: ${appId}`);
 
         while (totalFetched < numReviews) {
             const result = await gplay.reviews(options);
@@ -109,16 +115,17 @@ const scrapeReviews = async (req, res) => {
     // console.log("CountryCode: %s\n", countryCode);
 
     try {
-        // Get the actual count of reviews
+        // The app page's count is only recorded in the relog; it does not limit the scrape
         const appDetails = await gplay.app({ appId: appId, country: countryCode });
         const reviewsCount = appDetails.reviews;
-        const pushQuery = "c:" + countryCode + "_a:" + appId;
-        node_ttl.push(pushQuery, reviewsCount, null, 604800); // 1 week
-        console.log(`App ${appId} contains ${reviewsCount} reviews`);
+        console.log(`App page for ${appId} reports ${reviewsCount} reviews`);
 
-        // Fetch reviews based on the count or the maximum limit
-        const reviews = await fetchReviews(appId, reviewsCount, countryCode);
+        const reviews = await fetchReviews(appId, countryCode);
         console.log(`Received ${reviews.length} reviews for app: ${appId}`);
+
+        // Record what was actually scraped for the relog
+        const pushQuery = "c:" + countryCode + "_a:" + appId;
+        node_ttl.push(pushQuery, { scraped: reviews.length, reported: reviewsCount }, null, 604800); // 1 week
 
         console.log("First 10 reviews:");
         for (let i = 0; i < Math.min(10, reviews.length); i++) {

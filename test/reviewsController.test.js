@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const gplay = require("google-play-scraper");
-const { scrapeReviews } = require("../controllers/reviewsController");
+const { scrapeReviews, downloadReviewsRelog } = require("../controllers/reviewsController");
 
 // More store calls than this means the pagination loop is not terminating.
 const MAX_CALLS = 100;
@@ -41,9 +41,11 @@ function makeRes() {
         statusCode: 200,
         set() { return this; },
         setHeader(k, v) { this.headers[k] = v; },
+        getHeader(k) { return this.headers[k]; },
         status(code) { this.statusCode = code; return this; },
         json(body) { this.body = body; },
         send(body) { this.body = body; },
+        end() {},
     };
 }
 
@@ -52,6 +54,19 @@ async function scrape(query = {}) {
     await scrapeReviews({ query: { appId: "com.example.app", countryCode: "US", ...query }, headers: {}, method: "GET" }, res);
     const ids = typeof res.body === "string" ? res.body.match(/rid-\d+/g) || [] : [];
     return { res, ids };
+}
+
+// Fetch the reviews relog and return its "key: value" lines as an object
+function relog(query = {}) {
+    const res = makeRes();
+    const q = { appId: "com.example.app", countryCode: "US", store: "Google Play Store", sorting: "RECENT", ...query };
+    downloadReviewsRelog({ query: q, headers: {}, method: "GET" }, res);
+    const fields = {};
+    for (const line of String(res.body).split("\n")) {
+        const i = line.indexOf(": ");
+        if (i > 0) fields[line.slice(0, i)] = line.slice(i + 2);
+    }
+    return fields;
 }
 
 const tokens = (requests) => requests.map((r) => r.nextPaginationToken);
@@ -104,12 +119,54 @@ test("GSR-01: stops when tokens cycle and pages repeat reviews already collected
 
 test("GSR-01: still pages to the end when the store cooperates", async (t) => {
     const requests = stubStore(t, {
-        reported: 300,
-        pages: [page(0, 150, "TOKEN_A"), page(150, 150, "TOKEN_B"), page(300, 150, "TOKEN_C")],
+        reported: 450,
+        pages: [page(0, 150, "TOKEN_A"), page(150, 150, "TOKEN_B"), page(300, 150, null)],
     });
     const { res, ids } = await scrape();
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(tokens(requests), [undefined, "TOKEN_A"]);
-    assert.equal(ids.length, 300);
-    assert.equal(new Set(ids).size, 300);
+    assert.deepEqual(tokens(requests), [undefined, "TOKEN_A", "TOKEN_B"]);
+    assert.equal(ids.length, 450);
+    assert.equal(new Set(ids).size, 450);
+});
+
+test("GSR-06: scrapes every review when the app page under-reports the count", async (t) => {
+    const appId = "com.example.underreported";
+    const requests = stubStore(t, { reported: 1, pages: [page(0, 22, null)] });
+    const { res, ids } = await scrape({ appId });
+    assert.equal(res.statusCode, 200);
+    assert.equal(requests.length, 1);
+    assert.equal(ids.length, 22);
+    const log = relog({ appId });
+    assert.equal(log.num_reviews, "22");
+    assert.equal(log.store_reported_reviews, "1");
+});
+
+test("GSR-06: relog reports 0 rows when the store has none, not the app page count", async (t) => {
+    const appId = "com.example.overreported";
+    stubStore(t, { reported: 300, pages: [page(0, 0, null)] });
+    const { res, ids } = await scrape({ appId });
+    assert.equal(res.statusCode, 200);
+    assert.equal(ids.length, 0);
+    const log = relog({ appId });
+    assert.equal(log.num_reviews, "0");
+    assert.equal(log.store_reported_reviews, "300");
+});
+
+test("GSR-06: stops at 10,000 rows and the relog reports rows written", async (t) => {
+    const appId = "com.example.huge";
+    const requests = stubStore(t, {
+        reported: 1943447,
+        pages: (o) => {
+            const from = Number(o.nextPaginationToken || 0);
+            return page(from, 150, String(from + 150));
+        },
+    });
+    const { res, ids } = await scrape({ appId });
+    assert.equal(res.statusCode, 200);
+    assert.equal(requests.length, Math.ceil(10000 / 150));
+    assert.equal(ids.length, 10000);
+    assert.equal(new Set(ids).size, 10000);
+    const log = relog({ appId });
+    assert.equal(log.num_reviews, "10000");
+    assert.equal(log.store_reported_reviews, "1943447");
 });
