@@ -11,6 +11,11 @@ const searchController = require("./controllers/searchController");
 const app = express();
 const port = 5001;
 
+// nginx on this host proxies to us and appends the client address to
+// X-Forwarded-For. Trust only loopback hops so req.ip is the real client (used
+// by the /email rate limit) and a client-supplied X-Forwarded-For is ignored.
+app.set("trust proxy", "loopback");
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
