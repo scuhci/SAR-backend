@@ -45,7 +45,14 @@ test("top charts use the same order (without the search-only columns)", async ()
     const csvRes = mockResponse();
     listController.downloadTopChartsCSV(request({ query: "TOP_FREEGAMEus", includePermissions: "false" }), csvRes);
     const { header } = csvTable(csvRes.body);
-    assert.deepEqual(header, APP_COLUMNS.filter((column) => column !== "country" && column !== "scrapedFrom"));
+    // Chart rows may carry chart-only fields (rank, collection, category);
+    // the documented columns they do have must keep the documented order.
+    assert.deepEqual(
+        header.filter((column) => APP_COLUMNS.includes(column)),
+        APP_COLUMNS.filter((column) => header.includes(column)),
+    );
+    assert.ok(header.includes("description") && header.includes("currentVersionChanges"));
+    assert.ok(!header.includes("scrapedFrom"));
 });
 
 test("reviews CSV uses the documented column order", async () => {

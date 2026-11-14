@@ -93,6 +93,7 @@ function fixColumns(oldColumns, source)
 // searches already produced it, except that developerId sat after
 // androidVersion unless the first result was a featured card.
 const appColumnOrder = [
+  'rank', // top charts only
   'title',
   'appId',
   'url',
@@ -104,6 +105,8 @@ const appColumnOrder = [
   'summary',
   'score',
   'country',
+  'collection', // top charts only
+  'category', // top charts only
   'source',
   'maxInstalls',
   'ratings',
