@@ -79,6 +79,47 @@ function isValidEmail(email) {
   );
 }
 
+// A registered search that fails must still be answered, and the registration
+// must not survive to be mailed when someone else runs the same search later.
+// Sends a short plain-text notice; never throws and never logs the address.
+function notifySearchFailed(notifyKey, query, country) {
+  try {
+    const entry = emailMappings.get(notifyKey);
+    if (!entry) return;
+    emailMappings.delete(notifyKey);
+    if (entry.expiresAt <= Date.now() || entry.emails.length === 0) return;
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_PASS,
+      },
+    });
+    const text = `The search for "${String(query).slice(0, 200)}" (country ${country}) did not produce results (the store returned an error or no apps). Please run the search again on www.smar-tool.org.`;
+    for (const userEmail of entry.emails) {
+      transporter.sendMail(
+        {
+          from: '"Jeshwin from the SMAR Team" <smar-tool@googlegroups.com>',
+          to: userEmail,
+          subject: "[SMAR Tool] Your search could not be completed",
+          text,
+        },
+        (error) => {
+          if (error)
+            console.log(
+              "Email Error:",
+              error.code || "unknown",
+              error.responseCode || "",
+            );
+        },
+      );
+    }
+  } catch (error) {
+    console.log("Error sending failure notice:", error && error.code);
+  }
+}
+
 // Escape a value before interpolating it into the notification HTML.
 function escapeHtml(value) {
   return String(value)
@@ -135,6 +176,7 @@ const searchController = async (req, res) => {
     console.error("Missing search query");
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
+  const notifyKey = "c:" + country + "_t:" + query + "_p:" + permissions;
   try {
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
@@ -478,6 +520,7 @@ const searchController = async (req, res) => {
     });
   } catch (error) {
     console.error("Error occurred during search:", error);
+    notifySearchFailed(notifyKey, query, country);
     return res
       .status(500)
       .json({ error: "An error occurred while processing your request." });

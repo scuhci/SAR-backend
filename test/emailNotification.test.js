@@ -14,8 +14,20 @@ const fixtureApp = (appId) => ({
   summary: "fixture summary",
   score: 4,
 });
-gps.search = async ({ term }) => [fixtureApp(term)];
-gps.app = async ({ appId }) => fixtureApp(appId);
+let storeMode = "ok";
+gps.search = async ({ term }) => {
+  if (storeMode === "throttled") {
+    const error = new Error("Too many requests");
+    error.status = 429;
+    throw error;
+  }
+  if (storeMode === "empty") return [];
+  return [fixtureApp(term)];
+};
+gps.app = async ({ appId }) => {
+  if (storeMode === "empty") throw new Error("Not an app id");
+  return fixtureApp(appId);
+};
 
 const sent = [];
 let failSends = false;
@@ -87,6 +99,7 @@ after(async () => {
 beforeEach(() => {
   sent.length = 0;
   failSends = false;
+  storeMode = "ok";
 });
 
 // Every test uses its own client IP (via X-Forwarded-For from loopback, as
@@ -298,6 +311,94 @@ test("matches searches the current frontend sends without URL encoding", async (
       `no mail for ${JSON.stringify(term)}`,
     );
   }
+});
+
+test("tells the registrant when the search fails", async () => {
+  const query = "sleep tracker";
+  const queryId = queryIdFor(query);
+  assert.equal(
+    (await registerJson({ email: "alice@uni.edu", queryId }, freshIp())).status,
+    200,
+  );
+  storeMode = "throttled";
+  assert.equal((await runSearch(query)).status, 500);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, "alice@uni.edu");
+  assert.match(sent[0].subject, /could not be completed/);
+  assert.equal(sent[0].attachments, undefined);
+  assert.equal(tables.emailMappings.has(queryId), false);
+});
+
+test("tells the registrant when the search finds no apps", async () => {
+  const query = "sleep tracker";
+  const queryId = queryIdFor(query);
+  assert.equal(
+    (await registerJson({ email: "alice@uni.edu", queryId }, freshIp())).status,
+    200,
+  );
+  storeMode = "empty";
+  const response = await runSearch(query);
+  assert.equal(typeof response.status, "number");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, "alice@uni.edu");
+  assert.equal(tables.emailMappings.has(queryId), false);
+});
+
+test("a failed search consumes the registration", async () => {
+  const query = "sleep tracker";
+  assert.equal(
+    (
+      await registerJson(
+        { email: "alice@uni.edu", queryId: queryIdFor(query) },
+        freshIp(),
+      )
+    ).status,
+    200,
+  );
+  storeMode = "throttled";
+  assert.equal((await runSearch(query)).status, 500);
+  sent.length = 0;
+  advanceClock(20 * HOUR);
+  storeMode = "ok";
+  assert.equal((await runSearch(query)).status, 200);
+  assert.equal(sent.length, 0);
+});
+
+test("an expired registration gets no failure mail", async () => {
+  const query = "sleep tracker";
+  const queryId = queryIdFor(query);
+  assert.equal(
+    (await registerJson({ email: "alice@uni.edu", queryId }, freshIp())).status,
+    200,
+  );
+  advanceClock(25 * HOUR);
+  storeMode = "throttled";
+  assert.equal((await runSearch(query)).status, 500);
+  assert.equal(sent.length, 0);
+  assert.equal(tables.emailMappings.has(queryId), false);
+});
+
+test("failure mail errors do not log the recipient address", async () => {
+  const address = "private.failure@uni.edu";
+  console.log.mock.resetCalls();
+  console.error.mock.resetCalls();
+  failSends = true;
+  const query = "failure log check";
+  const queryId = queryIdFor(query);
+  assert.equal(
+    (await registerJson({ email: address, queryId }, freshIp())).status,
+    200,
+  );
+  storeMode = "throttled";
+  assert.equal((await runSearch(query)).status, 500);
+  assert.equal(sent.length, 1);
+  const logged = [...console.log.mock.calls, ...console.error.mock.calls]
+    .flatMap((call) => call.arguments)
+    .map((value) =>
+      typeof value === "string" ? value : JSON.stringify(value) + String(value),
+    )
+    .join("\n");
+  assert.ok(!logged.includes(address), "address appeared in a log line");
 });
 
 test("never writes the address to the server log", async () => {
