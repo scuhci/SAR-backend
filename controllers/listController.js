@@ -101,7 +101,9 @@ const fetchList = async (collection, category, num, country) => {
             console.log(`[%s] App Title: %s\n`, file_name, result.title);
         }
 
-        return { toplist: details, skipped: skipped };
+        // Tag each row with its storefront and chart, so rows from several chart exports can be told apart.
+        const rows = details.map((row) => ({ ...row, country, collection, category }));
+        return { toplist: rows, skipped: skipped };
     } catch (error) {
         console.error("Error scraping top list.", error);
         throw new Error("An error occurred while scraping for top list.");

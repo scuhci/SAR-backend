@@ -64,7 +64,7 @@ async function quietly(fn) {
     }
 }
 
-async function scrape(category, includePermissions = "false") {
+async function scrape(category, includePermissions = "false", country = "us") {
     const res = makeRes();
     await quietly(() =>
         scrapeList(
@@ -72,7 +72,7 @@ async function scrape(category, includePermissions = "false") {
                 query: {
                     collection: "TOP_FREE",
                     category,
-                    country: "us",
+                    country,
                     includePermissions,
                 },
             },
@@ -102,8 +102,8 @@ function corsHandler(handler, query) {
     ).then(() => res);
 }
 
-function chartQuery(category) {
-    return "TOP_FREE" + category + "us";
+function chartQuery(category, country = "us") {
+    return "TOP_FREE" + category + country;
 }
 
 function parseCsv(res) {
@@ -113,9 +113,9 @@ function parseCsv(res) {
     );
 }
 
-async function csv(category, includePermissions = "false") {
+async function csv(category, includePermissions = "false", country = "us") {
     return corsHandler(downloadTopChartsCSV, {
-        query: chartQuery(category),
+        query: chartQuery(category, country),
         includePermissions,
     });
 }
@@ -205,4 +205,48 @@ test("relog reports unknown skipped apps when the chart was never scraped", asyn
     assert.strictEqual(log.statusCode, 200);
     assert.match(log.body, /num_skipped: unknown/);
     assert.doesNotMatch(log.body, /skipped_app_ids/);
+});
+
+test("top-chart rows carry the storefront country and the chart", async () => {
+    skippedIds = new Set();
+    const category = "HEALTH_AND_FITNESS";
+    const usResponse = await scrape(category, "false", "us");
+    const jpResponse = await scrape(category, "false", "jp");
+
+    for (const response of [usResponse, jpResponse]) {
+        assert.strictEqual(response.body.results[0].collection, "TOP_FREE");
+        assert.strictEqual(response.body.results[0].category, category);
+    }
+    assert.strictEqual(usResponse.body.results[0].country, "us");
+    assert.strictEqual(jpResponse.body.results[0].country, "jp");
+
+    for (const country of ["us", "jp"]) {
+        const rows = parseCsv(await csv(category, "false", country));
+        assert.ok(rows[0].includes("rank"), "CSV has a rank column");
+        const countryColumn = rows[0].indexOf("country");
+        const collectionColumn = rows[0].indexOf("collection");
+        const categoryColumn = rows[0].indexOf("category");
+        assert.notStrictEqual(countryColumn, -1);
+        assert.notStrictEqual(collectionColumn, -1);
+        assert.notStrictEqual(categoryColumn, -1);
+        assert.strictEqual(rows[1][countryColumn], country);
+        assert.strictEqual(rows[1][collectionColumn], "TOP_FREE");
+        assert.strictEqual(rows[1][categoryColumn], category);
+    }
+});
+
+test("chart columns survive when permissions are included", async () => {
+    skippedIds = new Set();
+    const category = "MEDICAL";
+    const response = await scrape(category, "true", "us");
+    const app = response.body.results[0];
+    assert.strictEqual(app.country, "us");
+    assert.strictEqual(app.collection, "TOP_FREE");
+    assert.strictEqual(app.category, category);
+
+    const rows = parseCsv(await csv(category, "true", "us"));
+    assert.ok(rows[0].includes("rank"), "CSV has a rank column");
+    for (const column of ["country", "collection", "category"]) {
+        assert.notStrictEqual(rows[0].indexOf(column), -1);
+    }
 });
