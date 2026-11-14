@@ -1,6 +1,6 @@
 const natural = require("natural");
 const { search, app, similar } = require("app-store-scraper");
-const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
+const { jsonToCsv } = require("../utilities/jsonToCsv");
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
 var node_ttl = new nodeTTL();
@@ -165,22 +165,9 @@ const searchController = async (req, res) => {
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
-    const cleanedLimitedResults = resultsWithSimilarityScore.map((result) => {
-      // Clean the summary column
-      if (result.description) {
-        result.description = cleanText(result.description);
-      }
-
-        // Clean the recentChanges column
-        if (result.recentChanges) {
-          result.recentChanges = cleanText(result.recentChanges);
-        }
-
-        return result;
-      }
-    );
-
-    resultsToSend = cleanedLimitedResults;
+    // is no longer done here: the JSON response and the cached CSV rows share
+    // these objects, so the text stays raw and jsonToCsv escapes each cell once.
+    resultsToSend = resultsWithSimilarityScore;
     csvData = uniqueResults;
 
     console.log(

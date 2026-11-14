@@ -12,7 +12,7 @@ const fakeApp = {
   appId: 'com.example.app',
   title: 'Example App',
   url: 'https://apps.apple.com/us/app/example/id389801252',
-  description: 'Line one of the description.\nLine two with <b>html</b> & stuff.',
+  description: 'Line one of the "best" description.\nLine two with <b>html</b> & stuff.',
   icon: 'https://example.com/icon.png',
   genres: ['Social Networking'],
   genreIds: ['6005'],
@@ -63,6 +63,10 @@ const listController = require(path.join(__dirname, '..', 'controllers', 'listCo
 require(path.join(__dirname, '..', 'routes', 'searchRoutes'));
 const searchController = require(path.join(__dirname, '..', 'controllers', 'searchController'));
 
+// The description as a correctly escaped CSV cell: quotes doubled once, newline flattened
+const ESCAPED_DESCRIPTION =
+  '"Line one of the ""best"" description. Line two with <b>html</b> & stuff."';
+
 function parseHeader(csv) {
   return csv.split('\n')[0].split(',').map((c) => c.replace(/^"|"$/g, ''));
 }
@@ -89,7 +93,7 @@ test('app CSV keeps the description column for App Store data', () => {
   assert.strictEqual(header.filter((c) => c === 'description').length, 1);
   assert.ok(header.includes('appName') && header.includes('avgRating'), header);
   // newlines are flattened and the text is otherwise unchanged
-  assert.ok(csv.includes('Line one of the description. Line two with <b>html</b> & stuff.'), csv);
+  assert.ok(csv.includes('Line one of the ""best"" description. Line two with <b>html</b> & stuff.'), csv);
 });
 
 test('GET /download-top-csv includes the description column', async () => {
@@ -110,7 +114,7 @@ test('GET /download-top-csv includes the description column', async () => {
       const csv = await csvRes.text();
       const header = parseHeader(csv);
       assert.ok(header.includes('description'), `description column missing: ${header}`);
-      assert.ok(csv.includes('Line one of the description.'), 'description text missing from CSV row');
+      assert.ok(csv.includes(ESCAPED_DESCRIPTION), 'description text missing from CSV row');
     }
   );
 });
@@ -126,14 +130,16 @@ test('GET /download-csv (keyword / app ID search) includes the description colum
       assert.strictEqual(searchRes.status, 200);
       const searchBody = await searchRes.json();
       assert.strictEqual(searchBody.totalCount, 1);
-      assert.ok(searchBody.results[0].description, 'JSON response should carry description');
+      // the JSON carries the text as the store returned it, quotes not doubled
+      assert.strictEqual(searchBody.results[0].description, fakeApp.description);
 
       const csvRes = await fetch(`${base}/download-csv?query=com.example.app&countryCode=us`);
       assert.strictEqual(csvRes.status, 200);
       const csv = await csvRes.text();
       const header = parseHeader(csv);
       assert.ok(header.includes('description'), `description column missing: ${header}`);
-      assert.ok(csv.includes('Line one of the description.'), 'description text missing from CSV row');
+      // each quote is doubled exactly once, the same as in the top-chart CSV
+      assert.ok(csv.includes(ESCAPED_DESCRIPTION), `description cell is wrong: ${csv.split('\n')[1]}`);
     }
   );
 });
