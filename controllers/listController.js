@@ -1,4 +1,4 @@
-const { list } = require("app-store-scraper");
+const { list, collection: collections, category: categories } = require("app-store-scraper");
 const { jsonToCsv } = require('../utilities/jsonToCsv');
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
@@ -24,12 +24,28 @@ const DEFAULT_COUNTRY = "US";
 const isEmptyFeedError = (error) =>
   error instanceof TypeError && /Cannot read propert(y|ies)[^]*\bmap\b/.test(error.message);
 
+// The library defaults to 50 and rejects anything above 200, so always use
+// an explicit, validated count. Anything missing or invalid asks for the
+// largest limit, which Apple answers with the whole chart (about 100 apps).
+const effectiveNum = (num) =>
+  Number.isInteger(num) && num > 0 && num < MAX_APPS_COUNT ? num : MAX_APPS_COUNT;
+
+// Key under which a chart's rows are kept for the CSV download. It is built
+// from the category code the scraper was called with, not from the client's
+// categoryName, so a request whose name and code disagree cannot replace
+// another chart's rows. A full-chart request gets collection + category key +
+// country, which is the query string the website sends to /download-top-csv.
+// A request for fewer apps gets a "_n<num>" suffix so it is stored separately.
+const buildChartKey = (collection, category, country, num) => {
+  const categoryKey =
+    Object.keys(categories).find((name) => categories[name] === category) || "";
+  const base = `${collection}${categoryKey}${country || ""}`;
+  const count = effectiveNum(num);
+  return count < MAX_APPS_COUNT ? `${base}_n${count}` : base;
+};
+
 const fetchList = async (collection, category, num, country) => {
-    // The library defaults to 50 and rejects anything above 200, so always pass
-    // an explicit, validated count. Anything missing or invalid asks for the
-    // largest limit, which Apple answers with the whole chart (about 100 apps).
-    const numAppsToFetch =
-      Number.isInteger(num) && num > 0 && num < MAX_APPS_COUNT ? num : MAX_APPS_COUNT;
+    const numAppsToFetch = effectiveNum(num);
     const options = {
       category: category,
       collection: collection,
@@ -72,6 +88,7 @@ const fetchList = async (collection, category, num, country) => {
     const query = collection.concat(categoryName, country);
   
     try {
+      const chartKey = buildChartKey(collection, category, country, num);
       // Fetch top list based on the count or the maximum limit
       const fetchedList = await fetchList(collection, category, num, country);
       // Tag each row with the storefront and chart it came from, like search results do.
@@ -134,13 +151,15 @@ const fetchList = async (collection, category, num, country) => {
         csvData = toplist;
       }
 
-      node_ttl.push(query, csvData, null, 604800);
-      console.log(query);
+      node_ttl.push(chartKey, csvData, null, 604800);
+      console.log(chartKey);
       console.log("CSV stored on backend");
   
       return res.json({
         totalCount: resultsToSend.length,
         results: resultsToSend,
+        // Pass this as ?query= to /download-top-csv to get exactly these rows
+        downloadQuery: chartKey,
       });
     } catch (error) {
       console.error("Error getting top list:", error);

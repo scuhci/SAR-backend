@@ -35,9 +35,10 @@ const makeRes = () => {
 const listQuery = {
   collection: "topfreeapplications",
   category: "6005",
-  categoryName: "Social Networking",
+  categoryName: "SOCIAL_NETWORKING",
   country: "gb",
 };
+// The website's download query: collection + category key + country
 const cacheKey = listQuery.collection + listQuery.categoryName + listQuery.country;
 
 test("toplists JSON rows carry the requested country and collection", async () => {
