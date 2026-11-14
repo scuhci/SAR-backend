@@ -76,3 +76,13 @@ test("top charts CSV has country and collection columns filled on every row", as
     assert.strictEqual(cells[collectionIdx], '"topfreeapplications"');
   }
 });
+
+test("rows from a request without country say US, the storefront the library falls back to", async () => {
+  const { country, ...withoutCountry } = listQuery;
+  const res = makeRes();
+  await scrapeList({ query: withoutCountry }, res);
+  assert.strictEqual(res.statusCode, 200);
+  for (const row of res.body.results) {
+    assert.strictEqual(row.country, "US");
+  }
+});

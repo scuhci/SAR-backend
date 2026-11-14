@@ -16,6 +16,8 @@ const MAX_APPS_COUNT = 200;
 // limit=1, which makes app-store-scraper's list() throw "apps.map is not a
 // function". Always ask the library for at least 2 and trim the result below.
 const MIN_LIST_REQUEST = 2;
+// Storefront app-store-scraper falls back to when no country is given
+const DEFAULT_COUNTRY = "US";
 
 const fetchList = async (collection, category, num, country) => {
     // The library defaults to 50 and rejects anything above 200, so always pass
@@ -64,10 +66,11 @@ const fetchList = async (collection, category, num, country) => {
     try {
       // Fetch top list based on the count or the maximum limit
       const fetchedList = await fetchList(collection, category, num, country);
-      // Tag each row with the storefront and chart it came from, like search results do
+      // Tag each row with the storefront and chart it came from, like search results do.
+      // Without a country the library reads the US chart, so say that instead of "undefined".
       const toplist = fetchedList.map((result) => ({
         ...result,
-        country: country,
+        country: country || DEFAULT_COUNTRY,
         collection: collection,
       }));
       console.log(`Scraped Top ${toplist.length} Apps for ${collection} and ${category}`);
