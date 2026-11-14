@@ -1,10 +1,14 @@
-// Top charts controller tests. gplay.list is stubbed, so there is no store traffic.
+// Top charts validation tests. The scraper and the permission lookup are stubbed, so there is no store traffic.
 const test = require("node:test");
 const assert = require("node:assert");
 const gplay = require("google-play-scraper");
 const { scrapeList } = require("../controllers/listController");
 
 const fakeApp = (i) => ({ appId: "com.example.app" + i, title: "App " + i, summary: "s", recentChanges: "c" });
+
+// Only gplay.list is under test here. Keep per-app detail and permission lookups off the store.
+gplay.app = async ({ appId }) => ({ appId, title: appId, summary: "s", recentChanges: "c" });
+require("../controllers/permissionsController").fetchPermissions = async (results) => results.map((appInfo) => ({ ...appInfo, permissions: [] }));
 
 // Replace gplay.list with canned results and record every options object sent.
 function stubList(results) {

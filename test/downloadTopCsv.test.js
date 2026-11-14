@@ -5,6 +5,9 @@ const assert = require("node:assert");
 const gplay = require("google-play-scraper");
 
 gplay.list = async () => [{ appId: "com.example.one", title: "One", summary: "s", recentChanges: "c" }];
+// Keep per-app detail and permission lookups off the store.
+gplay.app = async ({ appId }) => ({ appId, title: appId, summary: "s", recentChanges: "c" });
+require("../controllers/permissionsController").fetchPermissions = async (results) => results.map((appInfo) => ({ ...appInfo, permissions: [] }));
 
 const app = require("../index");
 let server;
