@@ -249,8 +249,10 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
   columns = fixColumns(columns, source);
   // adding them to the top of the CSV
   csvRows.unshift(columns.map(column => csvCell(column)).join(','));
-  // RFC 4180 separates records with CRLF
-  return csvRows.join('\r\n');
+  // Records are LF-separated, as before and as in the iOS backend. The
+  // website's bulk-reviews merge joins these files with LF, so CRLF here
+  // would leave that file with mixed line endings.
+  return csvRows.join('\n');
 }
 
 module.exports = {

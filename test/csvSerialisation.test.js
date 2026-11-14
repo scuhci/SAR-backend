@@ -1,6 +1,6 @@
 // GSR-14: dateScraped was written unquoted in the server's local time zone,
-// null/undefined fields came out as the words "null"/"undefined", records
-// were LF-separated, and /download-csv sent two Content-Type headers.
+// null/undefined fields came out as the words "null"/"undefined", and
+// /download-csv sent two Content-Type headers.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { mockResponse, request, csvTable } = require("./helpers/stubScraper");
@@ -27,7 +27,7 @@ test("null and undefined fields are empty cells", () => {
 
 test("dateScraped is a quoted ISO-8601 UTC timestamp", () => {
     const csv = jsonToCsv([{ title: "A", appId: "a.b" }], "app", standardPermissionsList, false);
-    const record = csv.split("\r\n")[1];
+    const record = csv.split("\n")[1];
     const cell = record.slice(record.lastIndexOf(",") + 1);
     assert.match(cell, /^".*"$/);
     assert.match(csvTable(csv).rows[0].dateScraped, ISO_UTC);
@@ -43,7 +43,7 @@ test("Date and object values are written in a readable form", () => {
     assert.equal(row.extra, '{"a":1}');
 });
 
-test("records are CRLF-separated and the file parses as RFC 4180", () => {
+test("records are LF-separated and the file parses strictly", () => {
     const csv = jsonToCsv(
         [
             { title: 'Comma, "quote"', appId: "a.b", summary: "line one\nline two", permissions: [] },
@@ -53,7 +53,8 @@ test("records are CRLF-separated and the file parses as RFC 4180", () => {
         standardPermissionsList,
         true,
     );
-    assert.ok(!/[^\r]\n/.test(csv), "every line break is CRLF");
+    assert.ok(!csv.includes("\r"), "no carriage returns");
+    assert.equal(csv.split("\n").length, 3, "one line per record");
     const { header, rows } = csvTable(csv);
     assert.equal(header.length, 3 + 1 + standardPermissionsList.length);
     assert.equal(rows.length, 2);
