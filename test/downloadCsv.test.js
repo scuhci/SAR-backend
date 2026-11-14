@@ -48,3 +48,19 @@ test('/download-csv with an unknown key after a search returns 404', async () =>
   assert.equal(known.status, 200);
   assert.match(await known.text(), /Instagram/);
 });
+
+// Depends on the search in the previous test having cached its result.
+test('/download-csv sends a single Content-Type header', async () => {
+  const http = require('node:http');
+  const res = await new Promise((resolve, reject) => {
+    http
+      .get(`${server.base}/download-csv?query=com.burbn.instagram&countryCode=us`, (r) => {
+        r.resume();
+        r.on('end', () => resolve(r));
+      })
+      .on('error', reject);
+  });
+  assert.equal(res.statusCode, 200);
+  const contentTypes = res.rawHeaders.filter((_, i) => i % 2 === 1 && /^content-type$/i.test(res.rawHeaders[i - 1]));
+  assert.deepEqual(contentTypes, ['text/csv; charset=utf-8']);
+});

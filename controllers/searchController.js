@@ -303,7 +303,7 @@ const downloadCSV = (req, res) => {
       res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
 
       // Set response headers for CSV download
-      res.setHeader("Content-Type", ["text/csv", "charset=utf-8"]);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
       // Set response headers for CSV download
       res.setHeader(
         "Content-Disposition",
