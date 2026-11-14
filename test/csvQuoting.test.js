@@ -74,11 +74,11 @@ test('numbers, booleans and null still produce one quoted cell each', () => {
   assert.strictEqual(cells[cols.indexOf('reviewURL')], '');
 });
 
-test('string cells still have HTML stripped and quotes doubled', () => {
-  const csv = jsonToCsv([{ id: 1, text: '<b>Say</b> &quot;yo&quot;\nnow' }], 'reviews');
+test('string text is kept as is with quotes doubled and line breaks flattened', () => {
+  const csv = jsonToCsv([{ id: 1, text: '<b>Say</b> &quot;yo&quot; "now"\nthen' }], 'reviews');
   const [header, row] = csv.split('\n');
   const cells = parseRow(row);
-  assert.strictEqual(cells[parseRow(header).indexOf('reviewText')], 'Say "yo" now');
+  assert.strictEqual(cells[parseRow(header).indexOf('reviewText')], '<b>Say</b> &quot;yo&quot; "now" then');
 });
 
 test('a column missing from a later row is still a quoted empty cell', () => {

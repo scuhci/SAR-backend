@@ -3,26 +3,9 @@ function cleanText(text) {
     return text;
   }
 
-  // Remove HTML tags and decode HTML entities
-  let cleanedText = text
-  .replace(/<[^>]+>/g, '') // Remove HTML tags
-  .replace(/&quot;/g, '"')
-  .replace(/&amp;/g, '&')
-  .replace(/&apos;/g, "'")
-  .replace(/&lt;/g, '<')
-  .replace(/&gt;/g, '>')
-  .replace(/&#39;/g, "'");
-
-  // Escape double quotes within the text
-  cleanedText = cleanedText.replace(/"/g, '""');
-
-  // Replace HTML line breaks with spaces
-  cleanedText = cleanedText.replace(/<br\s*\/?>/g, ' ');
-
-  // Replace other line breaks with spaces
-  cleanedText = cleanedText.replace(/\r?\n|\r/g, ' ');
-
-  return cleanedText;
+  // App Store text is plain text, so nothing is stripped or decoded.
+  // Escape double quotes and flatten line breaks for CSV cells.
+  return text.replace(/"/g, '""').replace(/\r?\n|\r/g, ' ');
 }
 
 // Turn any cell value into a plain string for cleanText to escape, so arrays

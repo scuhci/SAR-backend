@@ -88,8 +88,8 @@ test('app CSV keeps the description column for App Store data', () => {
   assert.ok(header.includes('description'), `description column missing: ${header}`);
   assert.strictEqual(header.filter((c) => c === 'description').length, 1);
   assert.ok(header.includes('appName') && header.includes('avgRating'), header);
-  // description text is present, HTML stripped and newlines flattened
-  assert.ok(csv.includes('Line one of the description. Line two with html & stuff.'), csv);
+  // newlines are flattened and the text is otherwise unchanged
+  assert.ok(csv.includes('Line one of the description. Line two with <b>html</b> & stuff.'), csv);
 });
 
 test('GET /download-top-csv includes the description column', async () => {
