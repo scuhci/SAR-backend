@@ -14,6 +14,7 @@ global.setTimeout = (fn, ms, ...args) =>
 // Per-test stub configuration.
 const store = {
   primary: [],
+  primaryEntries: null,
   related: () => [],
   failApp: () => null, // (appId, attemptNumber) => Error | null
   appCalls: [],
@@ -26,7 +27,7 @@ const entry = (appId) => ({ appId, title: `Title ${appId}`, summary: "s" });
 gps.search = async (opts) =>
   opts.term.startsWith("related to ")
     ? store.related(opts.term.slice("related to ".length))
-    : store.primary.map(entry);
+    : store.primaryEntries ?? store.primary.map(entry);
 
 gps.app = async (opts) => {
   // The controller first probes the query itself as an app ID; a keyword
@@ -106,9 +107,15 @@ const fakeRes = () => ({
   },
 });
 
-const reset = ({ primary, related = () => [], failApp = () => null }) => {
+const reset = ({
+  primary,
+  primaryEntries = null,
+  related = () => [],
+  failApp = () => null,
+}) => {
   Object.assign(store, {
     primary,
+    primaryEntries,
     related,
     failApp,
     appCalls: [],
@@ -151,6 +158,74 @@ const quiet = () => {
   console.log = console.error = console.warn = () => {};
   return () => ([console.log, console.error, console.warn] = saved);
 };
+
+test("N-DATA-01: featured primary card recovers its app ID", async (t) => {
+  t.after(quiet());
+  reset({
+    primary: [],
+    primaryEntries: [
+      {
+        title: "Spotify: Music and Podcasts",
+        url: "https://play.google.com/store/apps/details?id=com.spotify.music",
+        summary: "s",
+      },
+      entry("com.spotify.kids"),
+    ],
+  });
+  const res = await runSearch("spotify");
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(ids(res), ["com.spotify.kids", "com.spotify.music"]);
+  assert.equal(res.body.totalCount, 2);
+  assert.equal(res.body.partial, false);
+  assert.deepEqual(res.body.failedAppIds, []);
+});
+
+test("N-DATA-01: recovered primary card deduplicates against related results", async (t) => {
+  t.after(quiet());
+  reset({
+    primary: [],
+    primaryEntries: [
+      {
+        title: "Spotify: Music and Podcasts",
+        url: "https://play.google.com/store/apps/details?id=com.spotify.music",
+        summary: "s",
+      },
+    ],
+    related: () => [entry("com.spotify.music")],
+  });
+  const res = await runSearch("spotify");
+  assert.equal(res.statusCode, 200);
+  assert.equal(
+    store.appCalls.filter((id) => id === "com.spotify.music").length,
+    1,
+  );
+});
+
+test("N-DATA-01: entries without recoverable app IDs are reported as failures", async (t) => {
+  t.after(quiet());
+  reset({
+    primary: [],
+    primaryEntries: [
+      {
+        title: "Mystery App",
+        url: "https://play.google.com/store/apps/dev?id=",
+        summary: "s",
+      },
+      { title: "No Link" },
+      entry("com.ok"),
+    ],
+  });
+  const res = await runSearch("unknown apps");
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(ids(res), ["com.ok"]);
+  assert.equal(res.body.partial, true);
+  assert.deepEqual(res.body.failedAppIds, [
+    "https://play.google.com/store/apps/dev?id=",
+    "No Link",
+  ]);
+  assert.deepEqual(store.appCalls, ["com.ok"]);
+  assert.match(runRelog("unknown apps").body, /^num_failed: 2$/m);
+});
 
 test("GSR-02: an app whose detail fetch fails transiently is retried and kept", async (t) => {
   t.after(quiet());

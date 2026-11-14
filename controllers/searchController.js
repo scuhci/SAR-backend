@@ -32,6 +32,17 @@ const STORE_CONCURRENCY = 4;
 // 300 s proxy timeout; apps not fetched by then are reported in failedAppIds.
 const SEARCH_TIME_BUDGET_MS = 200 * 1000;
 
+// Featured Play search cards can omit appId while keeping the app URL.
+// Recover that ID before deduping so the most relevant result is retained.
+function appIdFromUrl(url) {
+  try {
+    const appId = new URL(url).searchParams.get("id");
+    return typeof appId === "string" && appId.length > 0 ? appId : null;
+  } catch {
+    return null;
+  }
+}
+
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
   const intersection = new Set([...set1].filter((x) => set2.has(x)));
@@ -125,6 +136,22 @@ const searchController = async (req, res) => {
       console.log("[%s] %s\n", file_name, result.title);
     }
     console.log("All results fetched\n");
+    // Entries that still have no app ID cannot be fetched; they are reported
+    // with the other failed apps (by url or title) instead of being dropped.
+    const missingIdLabels = [];
+    const seenMissingIdLabels = new Set();
+    for (const result of allResults) {
+      if (!result.appId && result.url) {
+        result.appId = appIdFromUrl(result.url);
+      }
+      if (!result.appId) {
+        const label = result.url || result.title || "unknown app";
+        if (!seenMissingIdLabels.has(label)) {
+          seenMissingIdLabels.add(label);
+          missingIdLabels.push(label);
+        }
+      }
+    }
     // Remove duplicates based on appId before fetching details: the related
     // lists overlap heavily, and each app only needs to be requested once.
     const seenAppIds = new Set();
@@ -165,9 +192,12 @@ const searchController = async (req, res) => {
 
     // Filter out apps with missing details, keeping their IDs to report
     const uniqueResults = detailedResults.filter((appInfo) => appInfo !== null);
-    const missingAppIds = uniqueApps
-      .filter((appInfo, index) => detailedResults[index] === null)
-      .map((appInfo) => appInfo.appId);
+    const missingAppIds = [
+      ...uniqueApps
+        .filter((appInfo, index) => detailedResults[index] === null)
+        .map((appInfo) => appInfo.appId),
+      ...missingIdLabels,
+    ];
 
     console.log(
       "[%s] [%d] uniqueResults:\n-------------------------\n",
@@ -189,6 +219,8 @@ const searchController = async (req, res) => {
 
     if (uniqueResults.length === 0) {
       if (missingAppIds.length > 0) {
+        const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions;
+        node_ttl.push(pushQuery + "_failed", missingAppIds, null, 604800); // for the relog
         return res.status(502).json({
           error: `Google Play did not return details for any of the ${missingAppIds.length} apps found. Please try again in a few minutes.`,
           partial: true,
