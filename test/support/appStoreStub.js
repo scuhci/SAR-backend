@@ -2,7 +2,17 @@
 // app-store-scraper call the backend makes with canned data so tests never
 // reach the App Store, and logs each call so a test can count them.
 //   APP_STORE_STUB=down -> every scraper call throws (simulated store outage)
+//   APP_STORE_STUB=brokenlist -> GET /toplists throws before its try block (the
+//     collection table cannot be enumerated), i.e. the async handler rejects
 const store = require('app-store-scraper');
+
+if (process.env.APP_STORE_STUB === 'brokenlist') {
+  store.collection = new Proxy(store.collection, {
+    ownKeys() {
+      throw new Error('stubbed failure outside the handler try block');
+    },
+  });
+}
 
 const INSTAGRAM = { id: 389801252, appId: 'com.burbn.instagram', title: 'Instagram', developer: 'Instagram, Inc.' };
 const FACEBOOK = { id: 284882215, appId: 'com.facebook.Facebook', title: 'Facebook', developer: 'Meta Platforms, Inc.' };

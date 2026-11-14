@@ -4,6 +4,7 @@ const { downloadRelog, downloadCSV } = require('./controllers/searchController')
 const { scrapeReviews, downloadReviewsRelog } = require('./controllers/reviewsController'); 
 const { scrapeList, downloadTopChartsCSV, downloadTopChartsRelog} = require('./controllers/listController');
 const { startPeriodicHealthCheck, getHealthStatus } = require('./utilities/healthCheck');
+const { asyncRoute } = require('./utilities/asyncRoute');
 const path = require('path');
 const app = express();
 const port = process.env.PORT || 5002;
@@ -17,9 +18,9 @@ app.use(express.static(buildpath));
 app.use('/search', searchRoutes);
 app.get('/download-relog', downloadRelog);
 app.get('/download-csv', downloadCSV);
-app.use('/reviews', scrapeReviews);
+app.use('/reviews', asyncRoute(scrapeReviews));
 app.use('/download-reviews-relog', downloadReviewsRelog);
-app.use('/toplists', scrapeList)
+app.use('/toplists', asyncRoute(scrapeList))
 app.use('/download-top-relog', downloadTopChartsRelog);
 app.use('/download-top-csv', downloadTopChartsCSV);
 
@@ -49,8 +50,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'An unexpected error occurred.' });
 });
 
-// Log a rejected promise from an async route handler instead of letting it
-// terminate the process (and every other user's request with it).
+// Last resort for promises rejected outside a wrapped route.
 process.on('unhandledRejection', (reason) => {
   console.error('[SERVER] Unhandled promise rejection:', reason);
 });
