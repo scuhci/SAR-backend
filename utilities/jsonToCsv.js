@@ -3,26 +3,27 @@ function cleanText(text) {
     return text;
   }
 
-  // Remove HTML tags and decode HTML entities
-  let cleanedText = text
-  .replace(/<[^>]+>/g, '') // Remove HTML tags
-  .replace(/&quot;/g, '"')
-  .replace(/&amp;/g, '&')
-  .replace(/&apos;/g, "'")
-  .replace(/&lt;/g, '<')
-  .replace(/&gt;/g, '>')
-  .replace(/&#39;/g, "'");
+  // App Store text is plain text, so nothing is stripped or decoded.
+  // Escape double quotes and flatten line breaks for CSV cells.
+  return text.replace(/"/g, '""').replace(/\r?\n|\r/g, ' ');
+}
 
-  // Escape double quotes within the text
-  cleanedText = cleanedText.replace(/"/g, '""');
-
-  // Replace HTML line breaks with spaces
-  cleanedText = cleanedText.replace(/<br\s*\/?>/g, ' ');
-
-  // Replace other line breaks with spaces
-  cleanedText = cleanedText.replace(/\r?\n|\r/g, ' ');
-
-  return cleanedText;
+// Turn any cell value into a plain string for cleanText to escape, so arrays
+// and objects do not end up as unescaped "a,b" or "[object Object]".
+function toCellText(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => toCellText(item)).join(', ');
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
 }
 
 function fixColumns(oldColumns, source)
@@ -34,7 +35,6 @@ function fixColumns(oldColumns, source)
     console.log("Editing App CSV Column Headers");
     columns = columns.map(column => column
     .replace('title', 'appName')
-    .replace('summary', 'description')
     .replace('score', 'avgRating')
     .replace('source', 'scrapedFrom')
     .replace('maxInstalls', 'approximateInstalls')
@@ -69,15 +69,33 @@ function fixColumns(oldColumns, source)
     .replace('score', 'rating')
     .replace('url', 'reviewURL')
     .replace('text', 'reviewText')
+    .replace('title', 'reviewTitle')
     .replace('version', 'versionWhenReviewed')
     .replace('dateReviewedScraped', 'dateScraped'));
   }
   return columns;
 }
 
+// When a result set was scraped, keyed by the rows array the controllers
+// cache. CSVs are built later, on download, and must carry the scrape time.
+const scrapeTimes = new WeakMap();
+
+function recordScrapeTime(rows, scrapedAt = new Date()) {
+  if (rows && typeof rows === 'object') {
+    scrapeTimes.set(rows, scrapedAt);
+  }
+  return rows;
+}
+
+function getScrapeTime(rows) {
+  return rows && typeof rows === 'object' ? scrapeTimes.get(rows) : undefined;
+}
+
 function jsonToCsv(jsonData, source) {
   const csvRows = [];
-  const currentTime = new Date();
+  // dateScraped is when the rows were scraped; rows nobody recorded a time
+  // for (reviews are converted as soon as they are fetched) get the current time
+  const currentTime = getScrapeTime(jsonData) || new Date();
 
   // console.log(jsonData);
 
@@ -86,6 +104,8 @@ function jsonToCsv(jsonData, source) {
 
   // Adjust columns
   // Define columns to exclude
+  // Unlike Google Play (summary + HTML description), the App Store scraper
+  // only returns 'description', so it stays in the CSV.
   const columnsToExclude = [
     'free',
     'scoreText',
@@ -109,19 +129,13 @@ function jsonToCsv(jsonData, source) {
     'histogram',
     'minInstalls',
     'priceText',
-    'description',
     'categories',
     'preregister',
     'earlyAccessEnabled',
     'isAvailableInPlayPass',
     'similarityScore',
-    'userURL',
+    'userUrl', // reviewer profile link (app-store-scraper spells it userUrl)
   ];
-  // for reviews, 'title' is removed, so we account for that here
-  if(source == 'reviews')
-  {
-    columnsToExclude.push('title');
-  }
   // Remove excluded columns
   columns = columns.filter(column => !columnsToExclude.includes(column));
   columns.push('dateScraped'); // adding this to list the timestamp the data was scraped at
@@ -134,7 +148,7 @@ function jsonToCsv(jsonData, source) {
     const rowValues = [];
     for (const column of columns) {
       if (column in row) {
-        rowValues.push(`"${cleanText(row[column])}"`);
+        rowValues.push(`"${cleanText(toCellText(row[column]))}"`);
         if(rowValues[rowValues.length-1] == `"primary search"`)
         {
           rowValues.pop();
@@ -148,10 +162,10 @@ function jsonToCsv(jsonData, source) {
       }
       else if (column == 'dateScraped')
       {
-        rowValues.push(currentTime);
+        rowValues.push(`"${currentTime.toISOString()}"`); // ISO-8601 UTC, quoted like every other cell
       }
       else {
-        rowValues.push('');
+        rowValues.push('""'); // quoted empty cell
       }
     }
     csvRows.push(rowValues.join(','));
@@ -166,4 +180,6 @@ function jsonToCsv(jsonData, source) {
 module.exports = {
   cleanText, 
   jsonToCsv,
+  recordScrapeTime,
+  getScrapeTime,
 };

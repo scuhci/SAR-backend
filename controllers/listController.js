@@ -104,6 +104,8 @@ const fetchList = async (collection, category, num, country) => {
         resultsToSend = toplist;
         csvData = toplist;
       }
+      // dateScraped in the CSV is this moment, not the download time
+      require('../utilities/jsonToCsv').recordScrapeTime(csvData);
 
       node_ttl.push(query, csvData, null, 604800);
       console.log(query);
@@ -146,7 +148,10 @@ const fetchList = async (collection, category, num, country) => {
         }
         const fileText = logInfo_arr.join('\n');
         console.log(fileText);
-        const filename = "Reproducibility_Log_" + logInfo["query"];
+        const filename =
+          "Reproducibility_Log_" +
+          encodeURI([logInfo.collection, logInfo.category].filter(Boolean).join("_")) +
+          ".txt";
         res.setHeader(
           "Content-Disposition",
           `attachment; filename="${filename}"`

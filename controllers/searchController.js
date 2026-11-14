@@ -1,6 +1,10 @@
 const natural = require("natural");
 const { search, app, similar } = require("app-store-scraper");
-const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
+const {
+  jsonToCsv,
+  recordScrapeTime,
+  getScrapeTime,
+} = require("../utilities/jsonToCsv");
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
 var node_ttl = new nodeTTL();
@@ -165,22 +169,9 @@ const searchController = async (req, res) => {
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
-    const cleanedLimitedResults = resultsWithSimilarityScore.map((result) => {
-      // Clean the summary column
-      if (result.description) {
-        result.description = cleanText(result.description);
-      }
-
-        // Clean the recentChanges column
-        if (result.recentChanges) {
-          result.recentChanges = cleanText(result.recentChanges);
-        }
-
-        return result;
-      }
-    );
-
-    resultsToSend = cleanedLimitedResults;
+    // is no longer done here: the JSON response and the cached CSV rows share
+    // these objects, so the text stays raw and jsonToCsv escapes each cell once.
+    resultsToSend = resultsWithSimilarityScore;
     csvData = uniqueResults;
 
     console.log(
@@ -193,6 +184,7 @@ const searchController = async (req, res) => {
     }
     const pushQuery = "c:" + country + "_t:" + query; // new relog key since results are based on country + search query now
     // we want users to get the CSV results corresponding to their entire search, so an update was necessary
+    recordScrapeTime(csvData); // dateScraped and the relog use this, not the download time
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
     console.log("CSV stored on backend");
     return res.json({
@@ -213,13 +205,18 @@ const downloadRelog = (req, res) => {
   // Info text, Reviews Log?
   cors()(req, res, () => {
     try {
+      // Describe the stored result set the CSV is built from: its scrape time
+      // and row count, falling back to the request when nothing is stored
+      const storedRows = node_ttl.get(
+        "c:" + req.query.countryCode + "_t:" + req.query.query
+      );
       const logInfo = {
         version: json_raw.version,
-        date_time: new Date(),
+        date_time: getScrapeTime(storedRows) || new Date(),
         store: req.query.store,
         country: req.query.countryCode,
         search_query: req.query.query,
-        num_results: req.query.totalCount,
+        num_results: storedRows ? storedRows.length : req.query.totalCount,
         info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
       // Implement store and country when applicable
@@ -230,7 +227,8 @@ const downloadRelog = (req, res) => {
       }
       const fileText = logInfo_arr.join("\n");
       console.log(fileText);
-      const filename = "Reproducibility_Log_" + logInfo["query"];
+      const filename =
+        "Reproducibility_Log_" + encodeURI(logInfo.search_query) + ".txt";
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${filename}"`
