@@ -8,6 +8,10 @@ const cors = require("cors");
 const path = require("path");
 const file_name = path.basename(__filename);
 
+// Sweep expired result sets and cap how many are kept; see utilities/resultCache.js
+const { limitCache } = require("../utilities/resultCache");
+limitCache(node_ttl);
+
 
 // Largest limit app-store-scraper accepts. Apple's RSS feed itself stops at
 // about 100 entries whatever limit is sent, so a full chart is about 100 apps.
@@ -221,6 +225,9 @@ const fetchList = async (collection, category, num, country) => {
         const permissions = req.query.includePermissions === 'true';
         console.log("Query used for CSV: %s\n", query);
         var csvInfo = node_ttl.get(query);
+        if (!csvInfo) {
+          return res.status(404).json({ error: "CSV data not available." });
+        }
         const csv = jsonToCsv(csvInfo, 'app');
         // Get the current timestamp in the desired format
         const timestamp = new Date().toLocaleString('en-US', {
