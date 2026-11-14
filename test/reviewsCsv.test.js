@@ -72,3 +72,19 @@ test('GET /reviews response has no reviewer profile URL column', async () => {
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('scraping reviews does not write reviewer names or profile links to the server log', async () => {
+  const logged = [];
+  const originalLog = console.log;
+  console.log = (...args) => logged.push(args.map(String).join(' '));
+  const res = { set() {}, setHeader() {}, status() { return res; }, send() { return res; }, json() { return res; } };
+  try {
+    await scrapeReviews({ query: { appId: 'com.example.logcheck', countryCode: 'us' } }, res);
+  } finally {
+    console.log = originalLog;
+  }
+  const output = logged.join('\n');
+  assert.ok(output.includes('com.example.logcheck'), 'the scrape should still log its progress');
+  assert.ok(!output.includes('Reviewer One') && !output.includes('Reviewer Two'), 'log contains a reviewer name');
+  assert.ok(!output.includes('apple.com/us/reviews/id'), 'log contains a reviewer profile link');
+});
