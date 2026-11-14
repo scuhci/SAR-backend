@@ -18,6 +18,10 @@ test("GSR-02: loading the search controller installs the category guard", () => 
   assert.notEqual(helper.extractCategories, unguarded);
   assert.deepEqual(helper.extractCategories(undefined), []);
   assert.deepEqual(helper.extractCategories(null), []);
+  // a missing entry further down the tree must not throw either
+  assert.deepEqual(helper.extractCategories([undefined, ["Tools", null, "TOOLS", null]]), [
+    { name: "Tools", id: "TOOLS" },
+  ]);
 });
 
 test("GSR-02: pages that do have categories are parsed as before", () => {
