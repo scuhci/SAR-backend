@@ -193,6 +193,44 @@ test("GSR-07: the relog records the language the reviews were fetched in", async
     assert.match(log.note, /by language only/);
 });
 
+test("GSR-07: a valid lang parameter overrides the country language", async (t) => {
+    const cases = [
+        ["IN", "hi"],
+        ["CA", "fr"],
+        ["JP", "en"],
+        ["BR", "pt-BR"],
+        ["TW", "zh-CN"],
+    ];
+    const requests = stubStore(t, { reported: 2, pages: [page(0, 2, null)] });
+    for (const [countryCode, lang] of cases) {
+        requests.length = 0;
+        const { res } = await scrape({ countryCode, lang });
+        assert.equal(res.statusCode, 200);
+        assert.equal(requests.length, 1);
+        assert.equal(requests[0].country, countryCode);
+        assert.equal(requests[0].lang, lang);
+    }
+});
+
+test("GSR-07: an invalid lang parameter falls back to the country language", async (t) => {
+    const invalidLanguages = ["", "EN", "english", "ja_JP", "ja;rm", "../x", ["hi", "fr"]];
+    const requests = stubStore(t, { reported: 2, pages: [page(0, 2, null)] });
+    for (const lang of invalidLanguages) {
+        requests.length = 0;
+        const { res } = await scrape({ countryCode: "JP", lang });
+        assert.equal(res.statusCode, 200);
+        assert.equal(requests.length, 1);
+        assert.equal(requests[0].lang, "ja");
+    }
+});
+
+test("GSR-07: the relog records an overridden language", async (t) => {
+    stubStore(t, { reported: 2, pages: [page(0, 2, null)] });
+    await scrape({ appId: "com.example.hindi", countryCode: "IN", lang: "hi" });
+    const log = relog({ appId: "com.example.hindi", countryCode: "IN" });
+    assert.equal(log.lang, "hi");
+});
+
 test("N-GPLAY-01: reviewer names and avatars are in neither the CSV nor the server log", async (t) => {
     const inspect = require("node:util").inspect;
     const originals = {

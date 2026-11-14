@@ -39,6 +39,12 @@ for (const [lang, countries] of Object.entries(LANG_COUNTRIES)) {
     for (const country of countries.split(" ")) LANG_BY_COUNTRY[country] = lang;
 }
 const reviewLang = (countryCode) => LANG_BY_COUNTRY[String(countryCode || "").toUpperCase()] || "en";
+const LANG_PATTERN = /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/;
+// An optional override reaches languages the country table cannot request,
+// since it maps each country to only one language. Anything that is not a
+// plain language code falls back to the country's language.
+const resolveLang = (countryCode, requested) =>
+    typeof requested === "string" && LANG_PATTERN.test(requested) ? requested : reviewLang(countryCode);
 
 const downloadReviewsRelog = (req, res) => {
     cors()(req, res, () => {
@@ -160,7 +166,7 @@ const scrapeReviews = async (req, res) => {
         const reviewsCount = appDetails.reviews;
         console.log(`App page for ${appId} reports ${reviewsCount} reviews`);
 
-        const lang = reviewLang(countryCode);
+        const lang = resolveLang(countryCode, req.query.lang);
         const reviews = await fetchReviews(appId, countryCode, lang);
         console.log(`Received ${reviews.length} reviews for app: ${appId}`);
 
