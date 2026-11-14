@@ -103,13 +103,13 @@ test('GET /download-top-csv includes the description column', async () => {
       app.use('/download-top-csv', listController.downloadTopChartsCSV);
     },
     async (base) => {
-      const query = 'toplists?collection=topfreeapplications&category=6005&categoryName=Social%20Networking&country=us';
+      const query = 'toplists?collection=topfreeapplications&category=6005&categoryName=SOCIAL_NETWORKING&country=us';
       const listRes = await fetch(`${base}/${query}`);
       assert.strictEqual(listRes.status, 200);
       const listBody = await listRes.json();
       assert.strictEqual(listBody.results[0].description, fakeApp.description);
 
-      const csvRes = await fetch(`${base}/download-top-csv?query=topfreeapplicationsSocial%20Networkingus`);
+      const csvRes = await fetch(`${base}/download-top-csv?query=topfreeapplicationsSOCIAL_NETWORKINGus`);
       assert.strictEqual(csvRes.status, 200);
       const csv = await csvRes.text();
       const header = parseHeader(csv);

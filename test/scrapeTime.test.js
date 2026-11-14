@@ -89,11 +89,11 @@ test('top-chart CSV keeps the scrape time', async (t) => {
   await call(listController.scrapeList, {
     collection: 'topfreeapplications',
     category: '6005',
-    categoryName: 'Social Networking',
+    categoryName: 'SOCIAL_NETWORKING',
     country: 'us',
   });
 
   t.mock.timers.tick(THREE_DAYS_MS);
-  const csv = await call(listController.downloadTopChartsCSV, { query: 'topfreeapplicationsSocial Networkingus' });
+  const csv = await call(listController.downloadTopChartsCSV, { query: 'topfreeapplicationsSOCIAL_NETWORKINGus' });
   assert.strictEqual(dateScrapedOf(csv), SCRAPED_AT.toISOString());
 });
