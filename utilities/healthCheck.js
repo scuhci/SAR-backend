@@ -16,6 +16,8 @@ const TEST_CONFIG = {
 const HEALTH_CHECK_INTERVAL = parseInt(process.env.HEALTH_CHECK_INTERVAL_MS) || 5 * 60 * 1000; // 5 minutes
 const CHECK_TIMEOUT = parseInt(process.env.HEALTH_CHECK_TIMEOUT_MS) || 10000; // 10 seconds
 const CONSECUTIVE_FAILURE_THRESHOLD = parseInt(process.env.HEALTH_FAILURE_THRESHOLD) || 3;
+// Healthy checks in a row needed before a flag is cleared and the recovery mail is sent.
+const CONSECUTIVE_HEALTHY_THRESHOLD = parseInt(process.env.HEALTH_RECOVERY_THRESHOLD) || CONSECUTIVE_FAILURE_THRESHOLD;
 
 // In-memory health status cache
 let healthStatus = {
@@ -38,10 +40,13 @@ let previousOverallStatus = null;
 
 // Consecutive failure counter
 let consecutiveFailureCount = 0;
+let consecutiveHealthyCount = 0;
 
 // Flag state
 let isFlagged = false;
 let flaggedAt = null;
+// Addresses still owed the alert email for the current flag
+let pendingAlertRecipients = [];
 
 // Interval timer reference for graceful shutdown
 let healthCheckInterval = null;
@@ -68,8 +73,10 @@ function createTransporter() {
  * Send health alert email to the dev team when scraper failures are flagged
  *
  * @param {Object} status - Current health status object
+ * @param {string[]} recipients - Addresses to send to (default: all of ALERT_EMAILS)
+ * @returns {Promise<string[]>} Addresses the alert was delivered to
  */
-async function onHealthFlagged(status) {
+async function onHealthFlagged(status, recipients = ALERT_EMAILS) {
   console.log("============================================");
   console.log("[HEALTH] ACTION REQUIRED - SCRAPER ISSUES DETECTED");
   console.log("============================================");
@@ -87,9 +94,9 @@ async function onHealthFlagged(status) {
   }
   console.log("============================================");
 
-  if (ALERT_EMAILS.length === 0) {
+  if (recipients.length === 0) {
     console.log("[HEALTH] No ALERT_EMAILS configured — skipping email notification.");
-    return;
+    return [];
   }
 
   const downRows = downServices
@@ -179,9 +186,19 @@ async function onHealthFlagged(status) {
     </body>
     </html>`;
 
+  const delivered = [];
+  let transporter;
   try {
-    const transporter = createTransporter();
-    for (const email of ALERT_EMAILS) {
+    transporter = createTransporter();
+  } catch (error) {
+    for (const email of recipients) {
+      console.error(`[HEALTH] Failed to send alert email to ${email}:`, error.message);
+    }
+    return delivered;
+  }
+
+  for (const email of recipients) {
+    try {
       await transporter.sendMail({
         from: '"SMAR Tool Health Monitor" <smar-tool@googlegroups.com>',
         to: email,
@@ -189,11 +206,13 @@ async function onHealthFlagged(status) {
         text: `SMAR Tool Scraper Alert\n\nThe scraper has been flagged after ${status.consecutiveFailures} consecutive failures.\nOverall status: ${status.overall.toUpperCase()}\nFlagged at: ${status.flaggedAt}\n\nAffected services:\n${downServices.map((s) => `- ${s.name}: ${s.error}`).join("\n")}\n\nPlease investigate the server logs.`,
         html: htmlContent,
       });
+      delivered.push(email);
       console.log(`[HEALTH] Alert email sent to ${email}`);
+    } catch (error) {
+      console.error(`[HEALTH] Failed to send alert email to ${email}:`, error.message);
     }
-  } catch (error) {
-    console.error("[HEALTH] Failed to send alert email:", error.message);
   }
+  return delivered;
 }
 
 /**
@@ -211,7 +230,7 @@ async function onHealthRestored(status) {
 
   if (ALERT_EMAILS.length === 0) {
     console.log("[HEALTH] No ALERT_EMAILS configured — skipping recovery email.");
-    return;
+    return [];
   }
 
   const htmlContent = `
@@ -269,9 +288,19 @@ async function onHealthRestored(status) {
     </body>
     </html>`;
 
+  const delivered = [];
+  let transporter;
   try {
-    const transporter = createTransporter();
+    transporter = createTransporter();
+  } catch (error) {
     for (const email of ALERT_EMAILS) {
+      console.error(`[HEALTH] Failed to send recovery email to ${email}:`, error.message);
+    }
+    return delivered;
+  }
+
+  for (const email of ALERT_EMAILS) {
+    try {
       await transporter.sendMail({
         from: '"SMAR Tool Health Monitor" <smar-tool@googlegroups.com>',
         to: email,
@@ -279,11 +308,13 @@ async function onHealthRestored(status) {
         text: `SMAR Tool Scraper Recovery\n\nThe scraper health has been restored. All services are now healthy.\nRestored at: ${status.lastCheck}\n\nNo further action is required.`,
         html: htmlContent,
       });
+      delivered.push(email);
       console.log(`[HEALTH] Recovery email sent to ${email}`);
+    } catch (error) {
+      console.error(`[HEALTH] Failed to send recovery email to ${email}:`, error.message);
     }
-  } catch (error) {
-    console.error("[HEALTH] Failed to send recovery email:", error.message);
   }
+  return delivered;
 }
 
 /**
@@ -502,9 +533,11 @@ async function checkAllServices() {
   // Track consecutive failures for degraded/unhealthy status
   if (overall === "degraded" || overall === "unhealthy") {
     consecutiveFailureCount++;
+    consecutiveHealthyCount = 0;
     console.log(`[HEALTH] Consecutive failure count: ${consecutiveFailureCount}`);
 
     // Flag if threshold reached
+    let justFlagged = false;
     if (consecutiveFailureCount >= CONSECUTIVE_FAILURE_THRESHOLD && !isFlagged) {
       isFlagged = true;
       flaggedAt = new Date().toISOString();
@@ -512,15 +545,23 @@ async function checkAllServices() {
       console.log(`[HEALTH] ⚠️  Flagged at: ${flaggedAt}`);
       console.log(`[HEALTH] ⚠️  Action required: External Google Play scraper may be experiencing issues.`);
       
-      // Send alert email to dev team
-      await onHealthFlagged({
+      pendingAlertRecipients = [...ALERT_EMAILS];
+      justFlagged = true;
+    }
+
+    // Send the alert to everyone still owed it. A failed send is retried on the
+    // next failing check, so a mail outage at flag time does not lose the alert.
+    // With no ALERT_EMAILS this runs once, for the console banner.
+    if (isFlagged && (justFlagged || pendingAlertRecipients.length > 0)) {
+      const delivered = await onHealthFlagged({
         lastCheck: new Date().toISOString(),
         overall,
         flagged: true,
         consecutiveFailures: consecutiveFailureCount,
         flaggedAt: flaggedAt,
         services,
-      });
+      }, pendingAlertRecipients);
+      pendingAlertRecipients = pendingAlertRecipients.filter((email) => !delivered.includes(email));
     }
   } else {
     // Reset counter when healthy
@@ -528,9 +569,10 @@ async function checkAllServices() {
       console.log(`[HEALTH] Consecutive failure count reset (was ${consecutiveFailureCount})`);
     }
     consecutiveFailureCount = 0;
+    consecutiveHealthyCount++;
 
     // Clear flag when healthy
-    if (isFlagged) {
+    if (isFlagged && consecutiveHealthyCount >= CONSECUTIVE_HEALTHY_THRESHOLD) {
       console.log(`[HEALTH] ✓ Flag cleared: Scraper health restored to healthy state.`);
       
       // Send recovery email to dev team
@@ -545,6 +587,9 @@ async function checkAllServices() {
       
       isFlagged = false;
       flaggedAt = null;
+      pendingAlertRecipients = [];
+    } else if (isFlagged) {
+      console.log(`[HEALTH] Healthy check ${consecutiveHealthyCount}/${CONSECUTIVE_HEALTHY_THRESHOLD} while flagged; flag stays until the scraper is stable.`);
     }
   }
 
@@ -631,7 +676,9 @@ function resetFlag() {
     console.log("[HEALTH] Flag manually reset by operator");
     isFlagged = false;
     flaggedAt = null;
+    pendingAlertRecipients = [];
     consecutiveFailureCount = 0;
+    consecutiveHealthyCount = 0;
     return { success: true, message: "Flag has been reset" };
   }
   return { success: false, message: "No flag to reset" };
