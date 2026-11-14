@@ -45,3 +45,18 @@ test("after a scrape, a key that was never scraped (or has expired) is a 404, th
     assert.match(hit.headers.get("content-type"), /text\/csv/);
     assert.match(await hit.text(), /com\.example\.one/);
 });
+
+test("download rejects repeated or missing query parameters", async () => {
+    const repeated = await fetch(`${base}/download-top-csv?query=a&query=b`);
+    assert.strictEqual(repeated.status, 400);
+    assert.match(repeated.headers.get("content-type"), /application\/json/);
+
+    const scraped = await fetch(`${base}/toplists?collection=TOP_FREE&category=&country=us&includePermissions=false`);
+    assert.strictEqual(scraped.status, 200);
+
+    const repeatedCached = await fetch(`${base}/download-top-csv?query=TOP_FREEus&query=x`);
+    assert.strictEqual(repeatedCached.status, 400);
+
+    const missing = await fetch(`${base}/download-top-csv`);
+    assert.strictEqual(missing.status, 400);
+});

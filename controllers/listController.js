@@ -194,6 +194,10 @@ const downloadTopChartsCSV = (req, res) => {
     // Use cors middleware for downloadCSV route
     cors()(req, res, () => {
         const query = req.query.query;
+        // Reject repeated or missing query values before the cache lookup.
+        if (typeof query !== "string" || query === "") {
+            return res.status(400).json({ error: "Invalid query." });
+        }
         const permissions = req.query.includePermissions === "true";
         console.log("Query used for CSV: %s\n", query);
         var csvInfo = node_ttl.get(query);
