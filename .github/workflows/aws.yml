@@ -5,6 +5,15 @@ on:
     branches: [gplay-production]
   workflow_dispatch: # Allows manual triggering
 
+# One deploy at a time. Runs share /tmp/deploy.tar.gz, the app directory and the
+# PM2 process on the host, so a second run waits for the first to finish.
+# Never cancel a run in progress: stopping it between "rm -rf $APP_DIR/*" and
+# "pm2 start" would leave the host with no app. GitHub keeps only the newest
+# waiting run, which is fine because the newest commit contains the older ones.
+concurrency:
+  group: deploy-gplay-production
+  cancel-in-progress: false
+
 jobs:
   verify:
     runs-on: ubuntu-latest
