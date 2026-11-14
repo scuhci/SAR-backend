@@ -192,6 +192,25 @@ test("rate limits registrations per client IP", async () => {
   );
 });
 
+test("a client-supplied X-Forwarded-For cannot dodge the per-IP limit", async () => {
+  // nginx appends the real address; anything to its left came from the client.
+  const real = freshIp();
+  const attempt = (i) =>
+    fetch(`${baseUrl}/email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Forwarded-For": `10.9.8.${i}, ${real}`,
+      },
+      body: JSON.stringify({
+        email: "user@uni.edu",
+        queryId: queryIdFor(`spoof${i}`),
+      }),
+    });
+  for (let i = 0; i < 10; i++) assert.equal((await attempt(i)).status, 200);
+  assert.equal((await attempt(10)).status, 429);
+});
+
 test("warns once when the proxy does not pass the client address", async () => {
   console.warn.mock.resetCalls();
   for (const term of ["no-xff-1", "no-xff-2"]) {
@@ -204,6 +223,41 @@ test("warns once when the proxy does not pass the client address", async () => {
   }
   assert.equal(console.warn.mock.callCount(), 1);
   assert.match(String(console.warn.mock.calls[0].arguments[0]), /X-Forwarded-For/);
+});
+
+test("rejects non-string values", async () => {
+  const ip = freshIp();
+  const queryId = queryIdFor("types");
+  for (const body of [
+    { email: ["a@uni.edu", "b@uni.edu"], queryId },
+    { email: { toString: "a@uni.edu" }, queryId },
+    { email: 42, queryId },
+    { email: "a@uni.edu", queryId: [queryId, queryId] },
+    { email: "a@uni.edu", queryId: { id: queryId } },
+  ]) {
+    const res = await registerJson(body, ip);
+    assert.equal(res.status, 400, `expected 400 for ${JSON.stringify(body)}`);
+  }
+  // A repeated ?queryId= is ignored in favour of the body copy.
+  const repeated = await registerJson(
+    { email: "a@uni.edu", queryId },
+    ip,
+    `?queryId=${encodeURIComponent(queryId)}&queryId=x`,
+  );
+  assert.equal(repeated.status, 200);
+  assert.equal(tables.emailMappings.get(queryId).emails.length, 1);
+});
+
+test("index.js keeps the wiring this suite copies", () => {
+  // index.js listens on load and cannot be required here, so guard the three
+  // lines the /email limits depend on.
+  const source = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "index.js"),
+    "utf8",
+  );
+  assert.match(source, /^app\.set\("trust proxy", "loopback"\);$/m);
+  assert.match(source, /^app\.use\(express\.json\(\)\);$/m);
+  assert.doesNotMatch(source, /^\s*app\.use\(express\.urlencoded/m);
 });
 
 test("caps recipients per search, ignoring case for duplicates", async () => {
