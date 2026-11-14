@@ -89,8 +89,9 @@ function fixColumns(oldColumns, source)
 }
 
 // Fixed column order for each CSV, by scraper field name (fixColumns renames
-// them afterwards). This is the order documented in the User Guide, which is
-// also what keyword searches have always produced.
+// them afterwards). This is the order documented in the User Guide. Keyword
+// searches already produced it, except that developerId sat after
+// androidVersion unless the first result was a featured card.
 const appColumnOrder = [
   'title',
   'appId',

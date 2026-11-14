@@ -80,6 +80,8 @@ const STORE_REVIEWS = [
     },
 ];
 
+// Rows shaped like google-play-scraper's ordinary search results, which have
+// no developerId (only the featured top-result card carries one).
 gplay.search = async () => [
     {
         title: STORE_APP.title,
@@ -87,7 +89,6 @@ gplay.search = async () => [
         url: STORE_APP.url,
         icon: STORE_APP.icon,
         developer: STORE_APP.developer,
-        developerId: STORE_APP.developerId,
         currency: STORE_APP.currency,
         price: STORE_APP.price,
         free: STORE_APP.free,
