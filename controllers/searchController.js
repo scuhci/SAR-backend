@@ -47,6 +47,7 @@ const emailMappings = new Map();
 // client IP -> { count, resetAt: ms }
 const notifyHitsByIp = new Map();
 let lastNotifySweep = 0;
+let warnedLoopbackClient = false;
 
 // Drop expired entries from both tables. Runs at most once a minute, so the
 // per-IP table cannot grow beyond the IPs seen in the last window.
@@ -672,6 +673,15 @@ const addEmailNotification = (req, res) => {
 
       const now = Date.now();
       sweepNotifyTables(now);
+
+      // Behind nginx req.ip should never be loopback. If it is, the proxy is
+      // not sending X-Forwarded-For and every visitor shares one bucket.
+      if (!warnedLoopbackClient && /^(?:::ffff:)?127\.|^::1$/.test(String(req.ip))) {
+        warnedLoopbackClient = true;
+        console.warn(
+          "[/email] client address is loopback; if this is behind a proxy it is not sending X-Forwarded-For and the per-IP limit is shared by all visitors",
+        );
+      }
 
       if (isNotifyRateLimited(req.ip, now))
         return res.status(429).json({

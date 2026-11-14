@@ -71,6 +71,7 @@ let baseUrl;
 before(async () => {
   mock.method(console, "log", () => {});
   mock.method(console, "error", () => {});
+  mock.method(console, "warn", () => {});
   // Drop morgan's access-log lines; leave the test runner's output alone.
   const realWrite = process.stdout.write.bind(process.stdout);
   mock.method(process.stdout, "write", (chunk, ...rest) =>
@@ -189,6 +190,20 @@ test("rate limits registrations per client IP", async () => {
     (await register("user@uni.edu", queryIdFor("rl-z"), ip)).status,
     200,
   );
+});
+
+test("warns once when the proxy does not pass the client address", async () => {
+  console.warn.mock.resetCalls();
+  for (const term of ["no-xff-1", "no-xff-2"]) {
+    const res = await fetch(`${baseUrl}/email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "user@uni.edu", queryId: queryIdFor(term) }),
+    });
+    assert.equal(res.status, 200);
+  }
+  assert.equal(console.warn.mock.callCount(), 1);
+  assert.match(String(console.warn.mock.calls[0].arguments[0]), /X-Forwarded-For/);
 });
 
 test("caps recipients per search, ignoring case for duplicates", async () => {
