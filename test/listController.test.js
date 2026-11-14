@@ -25,6 +25,8 @@ require.cache[require.resolve("app-store-scraper")] = {
   filename: require.resolve("app-store-scraper"),
   loaded: true,
   exports: {
+    // keep the library's constants (collection, category, ...) and replace only the network call
+    ...require("app-store-scraper"),
     list: (opts) => listImpl(opts),
   },
 };
