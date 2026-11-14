@@ -47,6 +47,8 @@ require.cache[scraperPath] = {
   filename: scraperPath,
   loaded: true,
   exports: {
+    // keep the library's constants (collection, category, ...) and replace only the network calls
+    ...require('app-store-scraper'),
     list: async () => [{ ...fakeApp }],
     search: async () => [{ ...fakeApp }],
     app: async () => ({ ...fakeApp }),
@@ -74,6 +76,8 @@ async function withServer(mount, fn) {
   try {
     await fn(`http://127.0.0.1:${server.address().port}`);
   } finally {
+    // drop any request a handler never answered so a failure cannot hang the run
+    server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
 }
