@@ -81,6 +81,11 @@ const fetchReviews = async (appId, countryCode, lang) => {
         sort: gplay.sort.NEWEST,
         lang: lang,
         country: countryCode,
+        // Each call must return one store page so the loop below owns the paging.
+        // Without paginate the library follows tokens itself: it never returns on an
+        // empty page that has a token, and drops rows past 150 when it merges pages.
+        num: 150,
+        paginate: true,
     };
 
     try {
