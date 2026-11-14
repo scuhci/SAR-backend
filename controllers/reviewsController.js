@@ -16,6 +16,13 @@ const SORT_OPTIONS = {
   HELPFUL: iosStore.sort.HELPFUL,
 };
 const DEFAULT_SORT = "RECENT";
+// Written to the relog when this process holds no record of the scrape
+// (server restarted, or the relog was requested without a scrape first)
+const UNKNOWN_SCRAPE_VALUE = "unknown (no scrape recorded on this server)";
+
+// One record per country + app + sort, so a relog describes the scrape it belongs to
+const scrapeKey = (countryCode, appId, sortName) =>
+  "c:" + String(countryCode || "").toLowerCase() + "_a:" + appId + "_s:" + sortName;
 
 const resolveSort = (sortBy) => {
   const value = String(sortBy || "").trim().toUpperCase();
@@ -29,18 +36,19 @@ const downloadReviewsRelog = (req, res) => {
   cors()(req, res, () => {
     try {
       // Written by scrapeReviews once the reviews have actually been fetched
-      const scrapeInfo =
-        node_ttl.get("c:" + req.query.countryCode + "_a:" + req.query.appId) ||
-        {};
+      const sortName = resolveSort(req.query.sortBy);
+      const scrapeInfo = node_ttl.get(
+        scrapeKey(req.query.countryCode, req.query.appId, sortName)
+      );
       const logInfo = {
         version: json_raw.version,
-        date_time: new Date(),
+        date_time: scrapeInfo ? scrapeInfo.scraped_at : new Date(),
         store: req.query.store,
         country: req.query.countryCode,
-        num_reviews: scrapeInfo.num_reviews, // rows delivered, not Apple's rating count
-        total_ratings: scrapeInfo.total_ratings,
+        num_reviews: scrapeInfo ? scrapeInfo.num_reviews : UNKNOWN_SCRAPE_VALUE, // rows delivered, not Apple's rating count
+        total_ratings: scrapeInfo ? scrapeInfo.total_ratings : UNKNOWN_SCRAPE_VALUE,
         appId: req.query.appId,
-        sort: scrapeInfo.sort, // the sort that was really used for the scrape
+        sort: scrapeInfo ? scrapeInfo.sort : UNKNOWN_SCRAPE_VALUE, // the sort that was really used for the scrape
         info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
       // Implement store and country when applicable
@@ -124,6 +132,8 @@ const scrapeReviews = async (req, res) => {
   const appId = req.query.appId;
   const countryCode = req.query.countryCode;
   const sortName = resolveSort(req.query.sortBy);
+  const key = scrapeKey(countryCode, appId, sortName);
+  node_ttl.del(key); // a failed scrape must not leave an older record behind
   // console.log("AppID: %s\n", appId);
   // console.log("CountryCode: %s\n", countryCode);
 
@@ -144,13 +154,13 @@ const scrapeReviews = async (req, res) => {
     );
 
     // Record what was actually scraped so the reproducibility log is accurate
-    const pushQuery = "c:" + countryCode + "_a:" + appId;
     node_ttl.push(
-      pushQuery,
+      key,
       {
         num_reviews: reviews.length, // rows written to the CSV
         total_ratings: reviewsCount, // Apple's userRatingCount for the app
         sort: SORT_OPTIONS[sortName], // App Store feed sortby value actually used
+        scraped_at: new Date(),
       },
       null,
       604800

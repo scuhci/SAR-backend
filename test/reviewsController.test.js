@@ -73,13 +73,16 @@ const scrape = async (sortBy) => {
   return res;
 };
 
-const relog = () => {
+// The relog is looked up by country, app and sort, so it is asked for with the
+// same sortBy as the scrape (no sortBy means the most-recent scrape).
+const relog = (sortBy) => {
   const res = makeRes();
   downloadReviewsRelog(
     makeReq({
       appId: "com.burbn.instagram",
       countryCode: "us",
       store: "iOS App Store",
+      sortBy,
       sorting: "RECENT", // what the frontend always sends, regardless of the scrape
     }),
     res
@@ -93,7 +96,7 @@ test("sortBy=Helpfulness is passed to the scraper and recorded in the relog", as
   assert.deepEqual(sortsUsed(), ["mostHelpful"]);
   assert.equal(csv.body.split("\n").length - 1, 2, "two review rows delivered");
 
-  const log = relog();
+  const log = relog("Helpfulness");
   assert.match(log, /^num_reviews: 2$/m);
   assert.match(log, new RegExp(`^total_ratings: ${TOTAL_RATINGS}$`, "m"));
   assert.match(log, /^sort: mostHelpful$/m);
