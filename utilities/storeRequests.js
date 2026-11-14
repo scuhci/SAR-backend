@@ -51,18 +51,26 @@ async function withRetry(
   }
 }
 
-// Map fn over items with at most `limit` calls in flight; results keep input order.
+// Map fn over items with at most `limit` calls in flight (at least one);
+// results keep input order. If fn rejects, no further items are started.
 async function mapWithConcurrency(items, limit, fn) {
   const results = new Array(items.length);
+  const width = Math.max(1, Math.floor(limit) || 1);
   let next = 0;
+  let failed = false;
   const worker = async () => {
-    while (next < items.length) {
+    while (!failed && next < items.length) {
       const index = next++;
-      results[index] = await fn(items[index], index);
+      try {
+        results[index] = await fn(items[index], index);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
     }
   };
   await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, worker),
+    Array.from({ length: Math.min(width, items.length) }, worker),
   );
   return results;
 }

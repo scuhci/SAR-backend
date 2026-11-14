@@ -82,3 +82,20 @@ test("GSR-03: mapWithConcurrency keeps order and the in-flight limit", async () 
   assert.equal(maxInFlight, 3);
   assert.deepEqual(await mapWithConcurrency([], 4, async () => 1), []);
 });
+
+test("GSR-03: the queue runs with a limit of 0 or NaN and stops after a rejection", async () => {
+  assert.deepEqual(await mapWithConcurrency([1, 2, 3], 0, async (n) => n * 2), [2, 4, 6]);
+  assert.deepEqual(await mapWithConcurrency([1, 2, 3], NaN, async (n) => n * 2), [2, 4, 6]);
+
+  let calls = 0;
+  await assert.rejects(
+    mapWithConcurrency([1, 2, 3, 4, 5, 6, 7, 8], 2, async (n) => {
+      calls++;
+      if (n === 1) throw new Error("boom");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }),
+    /boom/,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(calls <= 3, `started ${calls} items after a rejection`);
+});
