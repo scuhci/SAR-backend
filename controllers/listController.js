@@ -4,6 +4,11 @@ const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
 var node_ttl = new nodeTTL();
 let csvData; // set by scrapeList; was an implicit global, so a fresh process threw ReferenceError
+// The library's genre table stops at 6024; Apple also serves charts for these
+// two. The object is shared with the library's own validation in lib/list.js,
+// so list() accepts them too. Stickers (6025) is left out: its feed is empty
+// and the library throws on it.
+Object.assign(categories, { DEVELOPER_TOOLS: 6026, GRAPHICS_AND_DESIGN: 6027 });
 
 const cors = require("cors");
 const path = require("path");

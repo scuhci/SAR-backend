@@ -47,6 +47,35 @@ test('GET /toplists with an unknown category returns 400 instead of the overall 
   }
 });
 
+test('GET /toplists accepts the Developer Tools and Graphics & Design genres', async () => {
+  for (const [id, categoryName] of [[6026, 'DEVELOPER_TOOLS'], [6027, 'GRAPHICS_AND_DESIGN']]) {
+    const res = await fetch(
+      `${server.base}/toplists?collection=topfreeapplications&category=${id}&categoryName=${categoryName}&country=us`
+    );
+    assert.equal(res.status, 200, `category=${id}`);
+    assert.equal((await res.json()).totalCount, 2);
+    assert.match(server.output(), new RegExp('\\[STUB\\] scraper call: list .*"category":' + id));
+  }
+});
+
+test('GET /toplists still rejects the Stickers genre (empty feed)', async () => {
+  const before = listCalls();
+  const res = await fetch(
+    `${server.base}/toplists?collection=topfreeapplications&category=6025&categoryName=STICKERS&country=us`
+  );
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /category/);
+  assert.equal(listCalls(), before, 'the scraper must not be called for Stickers');
+});
+
+test('the scraper library accepts the added genres', () => {
+  require('../controllers/listController');
+  const constants = require('app-store-scraper/lib/constants');
+  assert.ok(Object.values(constants.category).includes(6026));
+  assert.ok(Object.values(constants.category).includes(6027));
+  assert.ok(!Object.values(constants.category).includes(6025));
+});
+
 test('GET /toplists with an empty category still returns the overall chart', async () => {
   const res = await fetch(`${server.base}/toplists?collection=topfreeapplications&category=&categoryName=&country=us`);
   assert.equal(res.status, 200);
