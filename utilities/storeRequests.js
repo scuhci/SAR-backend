@@ -1,11 +1,14 @@
 // Helpers for calling Google Play through google-play-scraper.
 
+// Loaded for its side effect: without it gplay.app() throws on every app whose
+// store page has no category array (see the comment in that file).
+require("./gplayCategoryGuard");
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// google-play-scraper sets error.status to the HTTP status code. Under load the
-// store also answers with a page the scraper cannot parse (a TypeError with no
-// status) or drops the connection (no status); both are worth another try. A
-// 4xx other than 408/429, e.g. "App not found (404)", will not change on retry.
+// google-play-scraper sets error.status to the HTTP status code; a dropped
+// connection or timeout has no status. Both are worth another try, except a
+// 4xx other than 408/429, e.g. "App not found (404)", which will not change.
 function isRetryable(error) {
   const status = error && error.status;
   if (typeof status !== "number") return true;
