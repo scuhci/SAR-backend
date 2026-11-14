@@ -5,14 +5,12 @@ const { scrapeReviews, downloadReviewsRelog } = require('./controllers/reviewsCo
 const { scrapeList, downloadTopChartsCSV, downloadTopChartsRelog} = require('./controllers/listController');
 const { startPeriodicHealthCheck, getHealthStatus } = require('./utilities/healthCheck');
 const { asyncRoute } = require('./utilities/asyncRoute');
-const path = require('path');
 const app = express();
 const port = process.env.PORT || 5002;
-
-// change for deployment
-const _dirname = path.dirname("");
-const buildpath = path.join(_dirname, "../sar-frontend/build");
-app.use(express.static(buildpath));
+// nginx is the public listener (it also serves the frontend build) and reaches
+// this process on loopback. Set LISTEN_HOST=0.0.0.0 only if something must
+// reach the port directly.
+const host = process.env.LISTEN_HOST || '127.0.0.1';
 
 // API Endpoints
 app.use('/search', searchRoutes);
@@ -55,8 +53,8 @@ process.on('unhandledRejection', (reason) => {
   console.error('[SERVER] Unhandled promise rejection:', reason);
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+app.listen(port, host, () => {
+  console.log(`Server is running on http://${host}:${port}`);
   
   // Start periodic health check for scraper services
   startPeriodicHealthCheck();
