@@ -129,7 +129,11 @@ jobs:
             # Create backup of current deployment for rollback safety
             if [ -d "$APP_DIR" ]; then
               sudo mkdir -p /var/backups
-              sudo cp -r $APP_DIR $BACKUP_DIR
+              if ! sudo cp -r $APP_DIR $BACKUP_DIR; then
+                echo "❌ Backup to $BACKUP_DIR failed; aborting before touching the running app"
+                sudo rm -rf "$BACKUP_DIR"
+                exit 1
+              fi
               echo "✅ Backup created at $BACKUP_DIR"
             fi
             
@@ -187,6 +191,8 @@ jobs:
             }
 
             if run_smoke_test "post-deploy"; then
+              # Keep the three newest backups; each one is a full copy of the app.
+              ls -dt /var/backups/SAR-backend-* 2>/dev/null | tail -n +4 | xargs -r sudo rm -rf
               echo "Deployment completed successfully"
               echo "Environment file location: $ENV_FILE"
               exit 0
