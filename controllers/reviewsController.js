@@ -165,11 +165,6 @@ const scrapeReviews = async (req, res) => {
         const pushQuery = "c:" + countryCode + "_a:" + appId;
         node_ttl.push(pushQuery, { scraped: reviews.length, reported: reviewsCount, lang }, null, 604800); // 1 week
 
-        console.log("First 10 reviews:");
-        for (let i = 0; i < Math.min(10, reviews.length); i++) {
-            console.log(JSON.stringify(reviews[i]));
-        }
-
         res.set("Access-Control-Allow-Origin", "*");
         const country_reviews = [...reviews.map((review) => ({ ...review, country: countryCode }))];
 

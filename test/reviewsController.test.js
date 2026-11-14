@@ -189,3 +189,50 @@ test("GSR-07: the relog records the language the reviews were fetched in", async
     await scrape({ appId: "com.example.jp", countryCode: "JP" });
     assert.equal(relog({ appId: "com.example.jp", countryCode: "JP" }).lang, "ja");
 });
+
+test("N-GPLAY-01: reviewer names and avatars are in neither the CSV nor the server log", async (t) => {
+    const inspect = require("node:util").inspect;
+    const originals = {
+        app: gplay.app,
+        reviews: gplay.reviews,
+        log: console.log,
+        info: console.info,
+        warn: console.warn,
+        error: console.error,
+    };
+    const logLines = [];
+    const capture = (...args) => logLines.push(args.map((arg) => typeof arg === "string" ? arg : inspect(arg)).join(" "));
+    const rows = Array.from({ length: 12 }, (_, i) => ({
+        id: "rev-" + i,
+        userName: "Pat Example-" + i,
+        userImage: "https://img.invalid/avatar-" + i,
+        score: 4,
+        text: "review body " + i,
+        url: "https://play.invalid/r/" + i,
+        date: "2026-01-01T00:00:00.000Z",
+    }));
+
+    gplay.app = async () => ({ reviews: 12 });
+    gplay.reviews = async () => ({ data: rows, nextPaginationToken: undefined });
+    console.log = capture;
+    console.info = capture;
+    console.warn = capture;
+    console.error = capture;
+    t.after(() => {
+        gplay.app = originals.app;
+        gplay.reviews = originals.reviews;
+        console.log = originals.log;
+        console.info = originals.info;
+        console.warn = originals.warn;
+        console.error = originals.error;
+    });
+
+    const res = makeRes();
+    await scrapeReviews({ query: { appId: "com.example.private", countryCode: "US" }, headers: {}, method: "GET" }, res);
+
+    assert.equal(res.statusCode, 200);
+    const csv = String(res.body);
+    assert.equal((csv.match(/rev-\d+/g) || []).length, 12);
+    assert.doesNotMatch(csv, /Pat Example-\d+|img\.invalid\/avatar/);
+    assert.equal(logLines.filter((line) => /Pat Example-\d+|img\.invalid\/avatar/.test(line)).length, 0);
+});
