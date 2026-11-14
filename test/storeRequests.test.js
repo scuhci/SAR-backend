@@ -14,11 +14,15 @@ const {
 
 const withStatus = (status) => Object.assign(new Error(`status ${status}`), { status });
 
-test("GSR-02: retry policy covers throttling, server errors and parse failures, not 404", () => {
+test("GSR-02: retry policy covers transient failures but not parse errors or 404", () => {
   assert.equal(isRetryable(withStatus(429)), true);
   assert.equal(isRetryable(withStatus(503)), true);
   assert.equal(isRetryable(withStatus(408)), true);
-  assert.equal(isRetryable(new TypeError("Cannot read properties of undefined")), true);
+  assert.equal(isRetryable(new TypeError("Cannot read properties of undefined")), false);
+  assert.equal(isRetryable(new SyntaxError("Unexpected token")), false);
+  assert.equal(isRetryable(new RangeError("Invalid array length")), false);
+  assert.equal(isRetryable(new ReferenceError("missingValue is not defined")), false);
+  assert.equal(isRetryable(new Error("Error requesting Google Play:socket hang up")), true);
   assert.equal(isRetryable("boom"), true);
   assert.equal(isRetryable(withStatus(404)), false);
   assert.equal(isRetryable(withStatus(400)), false);

@@ -70,6 +70,8 @@ const controller = require("../controllers/searchController");
 
 const parseFailure = () =>
   new TypeError("Cannot read properties of undefined (reading 'length')");
+const connectionDropped = () =>
+  new Error("Error requesting Google Play:socket hang up");
 const rateLimited = () => {
   const error = new Error("Error requesting Google Play:Response code 429");
   error.status = 429;
@@ -154,7 +156,8 @@ test("GSR-02: an app whose detail fetch fails transiently is retried and kept", 
   t.after(quiet());
   reset({
     primary: ["com.a", "com.b", "com.c"],
-    failApp: (id, attempt) => (id === "com.b" && attempt === 1 ? parseFailure() : null),
+    failApp: (id, attempt) =>
+      id === "com.b" && attempt === 1 ? connectionDropped() : null,
   });
   const res = await runSearch("transient");
   assert.equal(res.statusCode, 200);
@@ -177,8 +180,8 @@ test("GSR-02: apps that keep failing are reported, not silently dropped", async 
   assert.equal(res.body.totalCount, 2);
   assert.equal(res.body.partial, true);
   assert.deepEqual([...res.body.failedAppIds].sort(), ["com.b", "com.d"]);
-  // three attempts each, then give up
-  assert.equal(store.appCalls.filter((id) => id === "com.b").length, 3);
+  // Parse failures stop after one attempt; throttling gets three attempts.
+  assert.equal(store.appCalls.filter((id) => id === "com.b").length, 1);
   assert.equal(store.appCalls.filter((id) => id === "com.d").length, 3);
 
   const relog = runRelog("persistent");

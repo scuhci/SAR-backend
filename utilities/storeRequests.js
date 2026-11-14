@@ -6,12 +6,19 @@ require("./gplayCategoryGuard");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// google-play-scraper sets error.status to the HTTP status code; a dropped
-// connection or timeout has no status. Both are worth another try, except a
-// 4xx other than 408/429, e.g. "App not found (404)", which will not change.
+// Retry 408, 429 and 5xx responses; other HTTP errors will not change.
+// Statusless transport errors are retryable, while common parse/runtime
+// errors after a successful response are deterministic and should not retry.
 function isRetryable(error) {
   const status = error && error.status;
-  if (typeof status !== "number") return true;
+  if (typeof status !== "number") {
+    return !(
+      error instanceof TypeError ||
+      error instanceof SyntaxError ||
+      error instanceof RangeError ||
+      error instanceof ReferenceError
+    );
+  }
   return status === 408 || status === 429 || status >= 500;
 }
 
