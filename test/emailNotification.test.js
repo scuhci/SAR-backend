@@ -275,6 +275,31 @@ test("prefers the body when both are sent, as the current frontend does", async 
   assert.deepEqual(sent.map((m) => m.to), ["first+tag@uni.edu"]);
 });
 
+test("matches searches the current frontend sends without URL encoding", async () => {
+  // The deployed frontend interpolates the raw term into both URLs, so "+"
+  // reaches the backend as a space in /search and in ?queryId=, while the JSON
+  // body keeps the "+". The registration has to follow the URL copy.
+  for (const term of ["disney+", "c++ compiler", "50% off"]) {
+    sent.length = 0;
+    const queryId = `c:US_t:${term}_p:false`;
+    const res = await registerJson(
+      { email: "first+tag@uni.edu", queryId },
+      freshIp(),
+      `?email=first+tag@uni.edu&queryId=${queryId}`,
+    );
+    assert.equal(res.status, 200);
+    const search = await fetch(
+      `${baseUrl}/api/search?query=${term}&includePermissions=false&countryCode=US`,
+    );
+    assert.equal(search.status, 200);
+    assert.deepEqual(
+      sent.map((m) => m.to),
+      ["first+tag@uni.edu"],
+      `no mail for ${JSON.stringify(term)}`,
+    );
+  }
+});
+
 test("never writes the address to the server log", async () => {
   const address = "private.person+smar@uni.edu";
   console.log.mock.resetCalls();

@@ -593,7 +593,15 @@ const addEmailNotification = (req, res) => {
       // fallback so a frontend that has not been updated keeps working; drop
       // it once the frontend only sends the body. Never log the address.
       const body = req.body && typeof req.body === "object" ? req.body : {};
-      const queryId = body.queryId ?? req.query?.queryId;
+      // The query id has to equal the key /search builds from its own query
+      // string. A frontend that does not URL-encode the term sends "disney+"
+      // as "disney " on both URLs, so a well-formed query-string copy is the
+      // one that will match; the body copy is used otherwise.
+      const qsId = req.query?.queryId;
+      const queryId =
+        typeof qsId === "string" && QUERY_ID_REGEX.test(qsId)
+          ? qsId
+          : (body.queryId ?? qsId);
       const email = body.email ?? req.query?.email;
       console.log("Received request on /email endpoint");
 
