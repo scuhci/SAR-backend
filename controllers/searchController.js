@@ -31,6 +31,9 @@ const STORE_CONCURRENCY = 4;
 // passed since the search began, so the response arrives well inside nginx's
 // 300 s proxy timeout; apps not fetched by then are reported in failedAppIds.
 const SEARCH_TIME_BUDGET_MS = 200 * 1000;
+// Failure lists of each search, for the relog. Kept apart from the result
+// cache so a search takes one entry there, not two.
+const search_meta_ttl = new nodeTTL();
 
 // Featured Play search cards can omit appId while keeping the app URL.
 // Recover that ID before deduping so the most relevant result is retained.
@@ -220,7 +223,12 @@ const searchController = async (req, res) => {
     if (uniqueResults.length === 0) {
       if (missingAppIds.length > 0) {
         const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions;
-        node_ttl.push(pushQuery + "_failed", missingAppIds, null, 604800); // for the relog
+        search_meta_ttl.push(
+          pushQuery,
+          { failedAppIds: missingAppIds, permissionsFailedAppIds: [] },
+          null,
+          604800,
+        ); // for the relog
         return res.status(502).json({
           error: `Google Play did not return details for any of the ${missingAppIds.length} apps found. Please try again in a few minutes.`,
           partial: true,
@@ -269,6 +277,7 @@ const searchController = async (req, res) => {
       return result;
     });
 
+    let permissionsFailedAppIds = [];
     // Check if includePermissions is true
     if (permissions) {
       // If includePermissions is true, call the fetchPermissions function
@@ -277,6 +286,9 @@ const searchController = async (req, res) => {
         uniqueResults,
         { concurrency: STORE_CONCURRENCY, deadline },
       );
+      permissionsFailedAppIds = permissionsResults
+        .filter((appInfo) => appInfo.permissionsFetchFailed === true)
+        .map((appInfo) => appInfo.appId);
 
       // Process permissions data for the sliced 5 results
       const processedPermissionsResults = permissionsResults.map((appInfo) => {
@@ -402,6 +414,11 @@ const searchController = async (req, res) => {
                                       ? `
                                   <p style="margin: 5px 0;"><strong>Apps Not Fetched:</strong> ${missingAppIds.length} (Google Play did not return their details)</p>`
                                       : ""
+                                  }${
+                                    permissionsFailedAppIds.length > 0
+                                      ? `
+                                  <p style="margin: 5px 0;"><strong>Permissions Not Fetched:</strong> ${permissionsFailedAppIds.length} (permission cells for these apps are empty)</p>`
+                                      : ""
                                   }
                               </div>
                           </div>
@@ -473,13 +490,20 @@ const searchController = async (req, res) => {
     }
 
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
-    node_ttl.push(pushQuery + "_failed", missingAppIds, null, 604800); // for the relog
+    search_meta_ttl.push(
+      pushQuery,
+      { failedAppIds: missingAppIds, permissionsFailedAppIds },
+      null,
+      604800,
+    ); // for the relog
     console.log("CSV stored on backend");
     return res.json({
       totalCount: uniqueResults.length,
       results: resultsToSend,
-      partial: missingAppIds.length > 0,
+      partial:
+        missingAppIds.length > 0 || permissionsFailedAppIds.length > 0,
       failedAppIds: missingAppIds,
+      permissionsFailedAppIds,
     });
   } catch (error) {
     console.error("Error occurred during search:", error);
@@ -503,7 +527,9 @@ const downloadRelog = (req, res) => {
         req.query.query +
         "_p:" +
         (req.query.includePermissions === "true");
-      const failedAppIds = node_ttl.get(pushQuery + "_failed") || [];
+      const searchMeta = search_meta_ttl.get(pushQuery) || {};
+      const failedAppIds = searchMeta.failedAppIds || [];
+      const permissionsFailedAppIds = searchMeta.permissionsFailedAppIds || [];
       const logInfo = {
         version: json_raw.version,
         date_time: new Date(),
@@ -513,6 +539,11 @@ const downloadRelog = (req, res) => {
         num_results: req.query.totalCount,
         num_failed: failedAppIds.length,
         failed_app_ids: failedAppIds.length > 0 ? failedAppIds.join(", ") : "none",
+        num_permissions_failed: permissionsFailedAppIds.length,
+        permissions_failed_app_ids:
+          permissionsFailedAppIds.length > 0
+            ? permissionsFailedAppIds.join(", ")
+            : "none",
         permissions: req.query.includePermissions,
         info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };

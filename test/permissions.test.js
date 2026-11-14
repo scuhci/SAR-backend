@@ -91,6 +91,9 @@ test("GSR-10: search response and CSV leave failed permission cells empty", asyn
   const res = fakeRes();
   await searchController.search({ headers: {}, method: "GET", query }, res);
   assert.equal(res.statusCode, 200);
+  assert.equal(res.body.partial, true);
+  assert.deepEqual(res.body.permissionsFailedAppIds, ["com.bad"]);
+  assert.deepEqual(res.body.failedAppIds, []);
   const goodCells = cellsFor(res.body.results, "com.good");
   assert.equal(goodCells.length, standardPermissionsList.length);
   assert.equal(goodCells[standardPermissionsList.indexOf(CAMERA)], true);
@@ -111,6 +114,19 @@ test("GSR-10: search response and CSV leave failed permission cells empty", asyn
   assert.equal(bad[cameraCol], "");
   assert.equal(good[flagCol], '"false"');
   assert.equal(good[cameraCol], "true");
+
+  const relogRes = fakeRes();
+  searchController.downloadRelog(
+    {
+      headers: {},
+      method: "GET",
+      query: { ...query, totalCount: res.body.totalCount },
+    },
+    relogRes,
+  );
+  assert.match(relogRes.body, /^num_failed: 0$/m);
+  assert.match(relogRes.body, /^num_permissions_failed: 1$/m);
+  assert.match(relogRes.body, /^permissions_failed_app_ids: com.bad$/m);
 });
 
 test("GSR-10: top-charts response marks failed lookups as null too", async (t) => {

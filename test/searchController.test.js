@@ -291,7 +291,11 @@ test("GSR-02: a clean search reports partial: false and the relog says none fail
   const res = await runSearch("clean");
   assert.equal(res.body.partial, false);
   assert.deepEqual(res.body.failedAppIds, []);
-  assert.match(runRelog("clean").body, /^num_failed: 0$/m);
+  assert.deepEqual(res.body.permissionsFailedAppIds, []);
+  const relog = runRelog("clean").body;
+  assert.match(relog, /^num_failed: 0$/m);
+  assert.match(relog, /^num_permissions_failed: 0$/m);
+  assert.match(relog, /^permissions_failed_app_ids: none$/m);
 });
 
 test("GSR-03: each distinct app is fetched once, at most 4 requests at a time", async (t) => {
