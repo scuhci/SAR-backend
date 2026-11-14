@@ -9,6 +9,7 @@ let csvData; // set by scrapeList; was an implicit global, so a fresh process th
 // so list() accepts them too. Stickers (6025) is left out: its feed is empty
 // and the library throws on it.
 Object.assign(categories, { DEVELOPER_TOOLS: 6026, GRAPHICS_AND_DESIGN: 6027 });
+const { isSupportedCountry, UNSUPPORTED_COUNTRY_ERROR } = require('../utilities/country');
 
 const cors = require("cors");
 const path = require("path");
@@ -64,6 +65,11 @@ const fetchList = async (collection, category, num, country) => {
     }
     if (category !== undefined && !Object.values(categories).includes(category)) {
       return res.status(400).json({ error: "Invalid 'category' query parameter." });
+    }
+    // The scraper silently uses the US store for a country it does not know.
+    // No country at all is left alone: that is the library's own US default.
+    if (country && !isSupportedCountry(country)) {
+      return res.status(400).json({ error: UNSUPPORTED_COUNTRY_ERROR });
     }
     const query = collection.concat(categoryName, country);
   

@@ -37,6 +37,8 @@ function calculateResultSimilarityScore(result) {
   return result;
 }
 
+const { isSupportedCountry, UNSUPPORTED_COUNTRY_ERROR } = require("../utilities/country");
+
 const searchController = async (req, res) => {
   const query = req.query.query;
 
@@ -48,6 +50,11 @@ const searchController = async (req, res) => {
   if (!query) {
     console.error("Missing search query");
     return res.status(400).json({ error: "Search query is missing.\n" });
+  }
+  // The scraper silently uses the US store for a country it does not know.
+  // No country at all is left alone: that is the library's own US default.
+  if (country && !isSupportedCountry(country)) {
+    return res.status(400).json({ error: UNSUPPORTED_COUNTRY_ERROR });
   }
   try {
     // if an appID is passed as the query
