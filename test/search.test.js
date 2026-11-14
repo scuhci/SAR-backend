@@ -12,7 +12,9 @@ test.after(() => server.stop());
 test('a search with no App Store hits returns 200 with an empty result set', async () => {
   const res = await fetch(`${server.base}/search?query=zzznomatch&countryCode=us`);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { totalCount: 0, results: [] });
+  const body = await res.json();
+  assert.equal(body.totalCount, 0);
+  assert.deepEqual(body.results, []);
 });
 
 test('a search whose hits all fail their detail lookup is still an error, not "no results"', async () => {

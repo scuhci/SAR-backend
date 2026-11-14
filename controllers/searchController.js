@@ -94,6 +94,11 @@ const searchController = async (req, res) => {
         })),
     ];
 
+    // Apple returned no apps for this term: an empty result, not a server error.
+    if (allResults.length === 0) {
+      return res.json({ totalCount: 0, results: [] });
+    }
+
     console.log(
       "[%s] [%d] allResults:\n-------------------------\n",
       file_name,
@@ -103,11 +108,6 @@ const searchController = async (req, res) => {
       console.log("[%s] %s\n", file_name, result.title);
     }
     console.log("All results fetched\n");
-
-    // Apple returned no apps for this term: an empty result, not a server error.
-    if (allResults.length === 0) {
-      return res.json({ totalCount: 0, results: [] });
-    }
     // Fetch additional details (including genre) for each result
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
