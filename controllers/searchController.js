@@ -631,10 +631,10 @@ const downloadCSV = (req, res) => {
 const addEmailNotification = (req, res) => {
   cors()(req, res, () => {
     try {
-      // The address belongs in the JSON body, not the URL (where it ends up in
-      // access logs and browser history). The query string is still read as a
-      // fallback so a frontend that has not been updated keeps working; drop
-      // it once the frontend only sends the body. Never log the address.
+      // The address is accepted only from the JSON body (a form post or a URL-only
+      // request is rejected, which also keeps cross-origin pages from registering
+      // addresses, since a JSON post needs a preflight this server does not answer);
+      // the query id may still come from the query string. Never log the address.
       const body = req.body && typeof req.body === "object" ? req.body : {};
       // The query id has to equal the key /search builds from its own query
       // string. A frontend that does not URL-encode the term sends "disney+"
@@ -645,7 +645,7 @@ const addEmailNotification = (req, res) => {
         typeof qsId === "string" && QUERY_ID_REGEX.test(qsId)
           ? qsId
           : (body.queryId ?? qsId);
-      const email = body.email ?? req.query?.email;
+      const email = body.email;
       console.log("Received request on /email endpoint");
 
       if (!queryId || !email)
@@ -709,7 +709,6 @@ const addEmailNotification = (req, res) => {
       }
 
       res.status(200).json({ status: "success" });
-      // console.log("Email Mapping test: ", emailMappings[queryId]);
     } catch (e) {
       console.log("Failed to add email", e);
       res.status(500).json({ status: "error", message: e });

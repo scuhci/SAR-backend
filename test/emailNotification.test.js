@@ -80,7 +80,6 @@ before(async () => {
   const app = express();
   app.set("trust proxy", "loopback");
   app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
   app.use("/api", router);
   app.post("/email", controller.addEmailNotification);
   await new Promise((resolve) => {
@@ -110,12 +109,17 @@ const freshIp = () => {
   return `198.51.${Math.floor(ipCounter / 250)}.${(ipCounter % 250) + 1}`;
 };
 
-// Old-style request: values in the query string, as the live frontend sends.
-const register = (email, queryId, ip) =>
-  fetch(
-    `${baseUrl}/email?${new URLSearchParams({ email, queryId })}`,
-    { method: "POST", headers: { "X-Forwarded-For": ip } },
-  );
+// SEC-04: the address is accepted only from a JSON body; query-string-only
+// and form posts are rejected, while the query id may still come from the URL.
+const registerJson = (body, ip, rawQuery = "") =>
+  fetch(`${baseUrl}/email${rawQuery}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
+    body: JSON.stringify(body),
+  });
+
+// Registration helper matching the deployed frontend's JSON body.
+const register = (email, queryId, ip) => registerJson({ email, queryId }, ip);
 
 const queryIdFor = (query, country = "us", permissions = false) =>
   `c:${country}_t:${query}_p:${permissions}`;
@@ -250,15 +254,6 @@ test("escapes the search term in the mail body and attachment name", async () =>
   assert.equal(sent.length, 1);
 });
 
-// SEC-04: the address travels in the JSON body; the query-string form is kept
-// working until the frontend stops sending it.
-const registerJson = (body, ip, rawQuery = "") =>
-  fetch(`${baseUrl}/email${rawQuery}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
-    body: JSON.stringify(body),
-  });
-
 test("accepts the address in the JSON body", async () => {
   const queryId = queryIdFor("json-body");
   const res = await registerJson({ email: "body@uni.edu", queryId }, freshIp());
@@ -267,11 +262,37 @@ test("accepts the address in the JSON body", async () => {
   assert.deepEqual(sent.map((m) => m.to), ["body@uni.edu"]);
 });
 
-test("still accepts the query-string form", async () => {
-  const res = await register("qs@uni.edu", queryIdFor("query-form"), freshIp());
-  assert.equal(res.status, 200);
+test("rejects an address sent only in the URL or as a form post", async () => {
+  const queryId = queryIdFor("query-form");
+  const urlOnly = await fetch(
+    `${baseUrl}/email?email=qs@uni.edu&queryId=${encodeURIComponent(queryId)}`,
+    { method: "POST", headers: { "X-Forwarded-For": freshIp() } },
+  );
+  assert.equal(urlOnly.status, 400);
+
+  const formBody = new URLSearchParams({ email: "form@uni.edu", queryId });
+  const formPost = await fetch(`${baseUrl}/email`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Origin: "https://evil.example",
+      "X-Forwarded-For": freshIp(),
+    },
+    body: formBody.toString(),
+  });
+  assert.equal(formPost.status, 400);
+
+  // text/plain is the other body type a page can send without a preflight.
+  const textPost = await fetch(`${baseUrl}/email`, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain", "X-Forwarded-For": freshIp() },
+    body: JSON.stringify({ email: "text@uni.edu", queryId }),
+  });
+  assert.equal(textPost.status, 400);
+
   await runSearch("query-form");
-  assert.deepEqual(sent.map((m) => m.to), ["qs@uni.edu"]);
+  assert.equal(sent.length, 0);
+  assert.equal(tables.emailMappings.has(queryId), false);
 });
 
 test("prefers the body when both are sent, as the current frontend does", async () => {

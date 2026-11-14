@@ -17,7 +17,6 @@ const port = 5001;
 app.set("trust proxy", "loopback");
 
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 // change for deployment
 const _dirname = path.dirname("");
