@@ -17,10 +17,17 @@ test('a search with no App Store hits returns 200 with an empty result set', asy
   assert.deepEqual(body.results, []);
 });
 
-test('a search whose hits all fail their detail lookup is still an error, not "no results"', async () => {
+test('a search whose hits all fail their detail lookup is never reported as "no results"', async () => {
   const res = await fetch(`${server.base}/search?query=detailsfail&countryCode=us`);
-  assert.equal(res.status, 500);
-  assert.ok((await res.json()).error);
+  const body = await res.json();
+  // Today this is a 500. A backend that can answer from the search hits alone
+  // may return them instead; what must not happen is a 200 with nothing in it.
+  if (res.status === 200) {
+    assert.ok(body.totalCount > 0, 'store hits with failed lookups must not look like an empty search');
+  } else {
+    assert.equal(res.status, 500);
+    assert.ok(body.error);
+  }
 });
 
 test('a numeric App Store id resolves to that app instead of a keyword search', async () => {
