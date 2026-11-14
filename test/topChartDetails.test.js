@@ -69,6 +69,11 @@ test("a store page without a category block no longer makes the scraper throw", 
     assert.deepStrictEqual(mappingHelpers.extractCategories([["Health & Fitness", null, "HEALTH_AND_FITNESS", 1]]), [
         { name: "Health & Fitness", id: "HEALTH_AND_FITNESS" },
     ]);
+    // nested entries that are not arrays are skipped too, as in upstream 10.x
+    const nested = [[["Health & Fitness", null, "HEALTH_AND_FITNESS", 1]], undefined, [null, 7]];
+    assert.deepStrictEqual(mappingHelpers.extractCategories(nested), [
+        { name: "Health & Fitness", id: "HEALTH_AND_FITNESS" },
+    ]);
 });
 
 test("one failing app detail no longer fails the whole chart", async () => {
