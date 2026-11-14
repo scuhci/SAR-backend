@@ -37,6 +37,11 @@ function calculateResultSimilarityScore(result) {
   return result;
 }
 
+const {
+  isSupportedCountry,
+  KEYWORD_SEARCH_UNSUPPORTED_COUNTRY_ERROR,
+} = require("../utilities/country");
+
 const searchController = async (req, res) => {
   const query = req.query.query;
 
@@ -49,15 +54,30 @@ const searchController = async (req, res) => {
     console.error("Missing search query");
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
+  // search() and similar() use the US storefront for a country missing from the
+  // library's markets table; the id / bundle-id lookup sends the country to Apple
+  // as given. So for such a country only the lookup is run.
+  const keywordSearchable = !country || isSupportedCountry(country);
   try {
     // if an appID is passed as the query
-    const mainResults = await search({ term: query, country: country });
+    const mainResults = keywordSearchable ? await search({ term: query, country: country }) : [];
     const relatedResults = [];
     try {
-      const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
+      // checking if our query is a valid app ID: all digits is the numeric id
+      // from an App Store URL, anything else is tried as a bundle id
+      const lookup = /^\d+$/.test(query) ? { id: query } : { appId: query };
+      const fetched_appID = await app({ ...lookup, country: country });
+      // A developer ID can resolve to their first app, which is not the requested app.
+      // Treat that mismatch as a failed lookup so the keyword search can run.
+      if (lookup.id && String(fetched_appID.id) !== query) {
+        throw new Error("Numeric lookup returned a different app ID");
+      }
       console.log("App ID passed\n");
       mainResults.splice(0, mainResults.length, fetched_appID);
     } catch (error) {
+      if (!keywordSearchable) {
+        return res.status(400).json({ error: KEYWORD_SEARCH_UNSUPPORTED_COUNTRY_ERROR });
+      }
       // Secondary search for each primary result if required
       console.log("App ID not passed\n");
       for (const mainResult of mainResults) {
@@ -90,6 +110,11 @@ const searchController = async (req, res) => {
           source: "related app",
         })),
     ];
+
+    // Apple returned no apps for this term: an empty result, not a server error.
+    if (allResults.length === 0) {
+      return res.json({ totalCount: 0, results: [] });
+    }
 
     console.log(
       "[%s] [%d] allResults:\n-------------------------\n",
@@ -136,8 +161,9 @@ const searchController = async (req, res) => {
       return validResults.find((appInfo) => appInfo.appId === appId);
     });
 
+    // Apple returned hits but every detail lookup failed: still an error.
     if (uniqueResults.length === 0) {
-      throw new Error(`Search for '${query}' did not return any results.`);
+      throw new Error(`No app details could be fetched for '${query}'.`);
     }
 
     // Calculate similarity score for all unique results
@@ -158,10 +184,6 @@ const searchController = async (req, res) => {
         result.title,
         result.similarityScore
       );
-    }
-
-    if (resultsWithSimilarityScore.length === 0) {
-      throw new Error(`Search for '${query}' did not return any results.`);
     }
 
     // Apply cleanText to the summary and recentChanges properties of each result
@@ -258,6 +280,9 @@ const downloadCSV = (req, res) => {
       const pushQuery = "c:" + country + "_t:" + query; // to retrieve the csv information from node_ttl
       console.log("pushQuery used for CSV: %s\n", pushQuery);
       var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
+      if (!csvInfo) {
+        return res.status(404).json({ error: "CSV data not available." });
+      }
       const csv = jsonToCsv(
         csvInfo,
         "app"
@@ -290,7 +315,7 @@ const downloadCSV = (req, res) => {
       res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
 
       // Set response headers for CSV download
-      res.setHeader("Content-Type", ["text/csv", "charset=utf-8"]);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
       // Set response headers for CSV download
       res.setHeader(
         "Content-Disposition",

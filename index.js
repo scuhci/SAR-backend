@@ -3,23 +3,22 @@ const searchRoutes = require('./routes/searchRoutes');
 const { downloadRelog, downloadCSV } = require('./controllers/searchController');
 const { scrapeReviews, downloadReviewsRelog } = require('./controllers/reviewsController'); 
 const { scrapeList, downloadTopChartsCSV, downloadTopChartsRelog} = require('./controllers/listController');
-const { startPeriodicHealthCheck, getHealthStatus, checkAllServices } = require('./utilities/healthCheck');
-const path = require('path');
+const { startPeriodicHealthCheck, getHealthStatus } = require('./utilities/healthCheck');
+const { asyncRoute } = require('./utilities/asyncRoute');
 const app = express();
-const port = 5002;
-
-// change for deployment
-const _dirname = path.dirname("");
-const buildpath = path.join(_dirname, "../sar-frontend/build");
-app.use(express.static(buildpath));
+const port = process.env.PORT || 5002;
+// nginx is the public listener (it also serves the frontend build) and reaches
+// this process on loopback. Set LISTEN_HOST=0.0.0.0 only if something must
+// reach the port directly.
+const host = process.env.LISTEN_HOST || '127.0.0.1';
 
 // API Endpoints
 app.use('/search', searchRoutes);
 app.get('/download-relog', downloadRelog);
 app.get('/download-csv', downloadCSV);
-app.use('/reviews', scrapeReviews);
+app.use('/reviews', asyncRoute(scrapeReviews));
 app.use('/download-reviews-relog', downloadReviewsRelog);
-app.use('/toplists', scrapeList)
+app.use('/toplists', asyncRoute(scrapeList))
 app.use('/download-top-relog', downloadTopChartsRelog);
 app.use('/download-top-csv', downloadTopChartsCSV);
 
@@ -28,28 +27,34 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Detailed health check endpoint for scraper services
-app.get('/health/scraper', async (req, res) => {
+// Detailed health check endpoint for scraper services. Serves the result of
+// the last periodic check: only the monitor runs live App Store calls and owns
+// the consecutive-failure counter, so anonymous polls cannot add store traffic
+// or trip the alert flag.
+app.get('/health/scraper', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  
-  try {
-    // Always run a live check against the scraper
-    const healthStatus = await checkAllServices();
-    
-    // Return 503 if unhealthy, 200 otherwise
-    const statusCode = healthStatus.overall === 'unhealthy' ? 503 : 200;
-    res.status(statusCode).json(healthStatus);
-  } catch (error) {
-    console.error('[HEALTH] Error in health endpoint:', error.message);
-    res.status(500).json({ 
-      error: 'Failed to retrieve health status',
-      message: error.message 
-    });
-  }
+  const healthStatus = getHealthStatus();
+
+  // Return 503 if unhealthy, 200 otherwise
+  const statusCode = healthStatus.overall === 'unhealthy' ? 503 : 200;
+  res.status(statusCode).json(healthStatus);
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+// Answer unexpected errors with JSON. Express's default handler sends an HTML
+// page with the stack trace and server paths.
+app.use((err, req, res, next) => {
+  console.error('[SERVER] Unhandled error:', err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'An unexpected error occurred.' });
+});
+
+// Last resort for promises rejected outside a wrapped route.
+process.on('unhandledRejection', (reason) => {
+  console.error('[SERVER] Unhandled promise rejection:', reason);
+});
+
+app.listen(port, host, () => {
+  console.log(`Server is running on http://${host}:${port}`);
   
   // Start periodic health check for scraper services
   startPeriodicHealthCheck();
