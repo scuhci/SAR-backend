@@ -10,39 +10,16 @@ const file_name = path.basename(__filename);
 const cors = require("cors");
 const { globalAgent } = require("node:https");
 const router = require("../routes/searchRoutes");
+const { createThrottle } = require("../utilities/throttle");
 
 let csvData;
 let globalQuery;
 
 // Apple rate-limits bursts of lookups, so the store calls made while expanding
-// one keyword search share a throttle: at most LOOKUP_CONCURRENCY calls in
-// flight and at least LOOKUP_SPACING_MS between the start of any two calls.
-const LOOKUP_CONCURRENCY = 4;
-const LOOKUP_SPACING_MS = 250;
-
-function createThrottle() {
-  let nextStartAt = 0;
-  // Run fn over every item through the throttle and return results in order
-  return async function mapThrottled(items, fn) {
-    const results = new Array(items.length);
-    let next = 0;
-    const worker = async () => {
-      while (next < items.length) {
-        const i = next++;
-        const now = Date.now();
-        const wait = Math.max(0, nextStartAt - now);
-        nextStartAt = Math.max(now, nextStartAt) + LOOKUP_SPACING_MS;
-        if (wait > 0) {
-          await new Promise((resolve) => setTimeout(resolve, wait));
-        }
-        results[i] = await fn(items[i]);
-      }
-    };
-    const workers = Math.min(LOOKUP_CONCURRENCY, items.length);
-    await Promise.all(Array.from({ length: workers }, worker));
-    return results;
-  };
-}
+// one keyword search share a throttle (utilities/throttle.js): at most
+// `concurrency` calls in flight and at least `spacingMs` between the start of
+// any two calls. Exported so tests can shorten the spacing.
+const lookupThrottle = { concurrency: 4, spacingMs: 250 };
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -84,7 +61,7 @@ const searchController = async (req, res) => {
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
     const relatedFailedFor = [];
-    const mapThrottled = createThrottle();
+    const mapThrottled = createThrottle(lookupThrottle.concurrency, lookupThrottle.spacingMs);
     try {
       const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
       console.log("App ID passed\n");
@@ -359,4 +336,5 @@ module.exports = {
   search: searchController,
   downloadCSV,
   downloadRelog,
+  lookupThrottle,
 };

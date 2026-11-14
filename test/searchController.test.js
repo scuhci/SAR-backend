@@ -20,24 +20,16 @@ const appIdById = Object.fromEntries(primary.map((a) => [a.id, a.appId]));
 
 const calls = { search: [], app: [], similar: [] };
 let storeCallStarts = [];
-let inFlight = 0;
-let maxInFlight = 0;
 let failingAppIds = new Set();
 let failingSimilar = new Set();
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Records concurrency and start times for every throttled store call.
+// Records the start time of every throttled store call.
 async function storeCall(fn) {
   storeCallStarts.push(Date.now());
-  inFlight++;
-  maxInFlight = Math.max(maxInFlight, inFlight);
-  try {
-    await delay(20);
-    return fn();
-  } finally {
-    inFlight--;
-  }
+  await delay(5);
+  return fn();
 }
 
 const stub = {
@@ -79,7 +71,12 @@ require.cache[storePath] = { id: storePath, filename: storePath, loaded: true, e
 // routes/searchRoutes and controllers/searchController require each other;
 // load the router first, the same order index.js uses.
 require(path.join(__dirname, "..", "routes", "searchRoutes"));
-const { search } = require(path.join(__dirname, "..", "controllers", "searchController"));
+const { search, lookupThrottle } = require(path.join(__dirname, "..", "controllers", "searchController"));
+// Short spacing keeps the suite fast; the limits themselves are covered with
+// mock timers in test/throttle.test.js.
+const DEFAULT_LIMITS = { ...lookupThrottle };
+const TEST_SPACING_MS = 20;
+lookupThrottle.spacingMs = TEST_SPACING_MS;
 
 console.log = () => {};
 console.error = () => {};
@@ -107,10 +104,12 @@ beforeEach(() => {
   calls.app.length = 0;
   calls.similar.length = 0;
   storeCallStarts = [];
-  inFlight = 0;
-  maxInFlight = 0;
   failingAppIds = new Set();
   failingSimilar = new Set();
+});
+
+test("production lookup limits are 4 in flight and 250 ms between starts", () => {
+  assert.deepStrictEqual(DEFAULT_LIMITS, { concurrency: 4, spacingMs: 250 });
 });
 
 test("keyword search has no per-result sleep, stays throttled and looks each app up once", async () => {
@@ -121,13 +120,15 @@ test("keyword search has no per-result sleep, stays throttled and looks each app
 
   assert.strictEqual(res.statusCode, 200);
   // Old code slept 3 s after each of the 3 primary results (>= 9 s).
-  assert.ok(elapsed < 6000, `took ${elapsed} ms`);
-  // Old code fired every app() lookup at once through Promise.all.
-  assert.ok(maxInFlight <= 4, `${maxInFlight} store calls in flight at once`);
-  // Calls are still spaced out so Apple does not see a burst.
+  assert.ok(elapsed < 3000, `took ${elapsed} ms`);
+  // Store calls go through the throttle, so their starts are spaced out
+  // (2 ms of slack for timer rounding).
   const starts = [...storeCallStarts].sort((a, b) => a - b);
   for (let i = 1; i < starts.length; i++) {
-    assert.ok(starts[i] - starts[i - 1] >= 200, `calls ${i - 1} and ${i} started ${starts[i] - starts[i - 1]} ms apart`);
+    assert.ok(
+      starts[i] - starts[i - 1] >= TEST_SPACING_MS - 2,
+      `calls ${i - 1} and ${i} started ${starts[i] - starts[i - 1]} ms apart`
+    );
   }
   // 3 primary + 6 unique related apps; duplicates across lists are fetched once.
   assert.strictEqual(calls.similar.length, 3);
