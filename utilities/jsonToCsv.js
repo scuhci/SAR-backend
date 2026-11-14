@@ -113,6 +113,8 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
     'permissions', //This is the permissions data structure, which has a child object that contains individual permissions and their labels 
     //individual permissions and labels are added separately
   ];
+  // the lookup status only belongs in a CSV that has permission columns
+  if (!includePermissions) columnsToExclude.push('permissionsFetchFailed');
   // for reviews, 'title' is removed, so we account for that here
   if(source == 'reviews')
   {

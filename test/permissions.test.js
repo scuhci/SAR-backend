@@ -38,6 +38,7 @@ const searchController = require("../controllers/searchController");
 const listController = require("../controllers/listController");
 const { fetchPermissions } = require("../controllers/permissionsController");
 const standardPermissionsList = require("../controllers/permissionsConfig");
+const { jsonToCsv } = require("../utilities/jsonToCsv");
 
 const fakeRes = () => ({
   statusCode: 200,
@@ -126,4 +127,43 @@ test("GSR-10: top-charts response marks failed lookups as null too", async (t) =
   assert.equal(res.statusCode, 200);
   assert.equal(cellsFor(res.body.results, "com.good")[standardPermissionsList.indexOf(CAMERA)], true);
   assert.ok(cellsFor(res.body.results, "com.bad").every((v) => v === null));
+});
+
+test("GSR-10: permissionsFetchFailed is only included in CSV when permissions are requested", () => {
+  const data = [{ appId: "com.a", title: "A", permissions: null, permissionsFetchFailed: true }];
+  const withoutPermissions = jsonToCsv(data, "app", standardPermissionsList, false);
+  const withPermissions = jsonToCsv(data, "app", standardPermissionsList, true);
+
+  assert.ok(!withoutPermissions.split("\n")[0].includes("permissionsFetchFailed"));
+  assert.ok(withPermissions.split("\n")[0].includes("permissionsFetchFailed"));
+});
+
+test("GSR-10: top-charts CSV omits permissionsFetchFailed for the unticked frontend option", async (t) => {
+  t.after(quiet());
+  const query = { collection: "TOP_FREE", category: "APPLICATION", country: "us" };
+  const scrapeRes = fakeRes();
+  await listController.scrapeList(
+    {
+      headers: {},
+      method: "GET",
+      query: { ...query, includePermissions: "false" },
+    },
+    scrapeRes,
+  );
+  assert.equal(scrapeRes.statusCode, 200);
+
+  const csvRes = fakeRes();
+  listController.downloadTopChartsCSV(
+    {
+      headers: {},
+      method: "GET",
+      query: {
+        query: query.collection.concat(query.category, query.country),
+        includePermissions: false,
+      },
+    },
+    csvRes,
+  );
+  assert.equal(csvRes.statusCode, 200);
+  assert.ok(!csvRes.body.split("\n")[0].includes("permissionsFetchFailed"));
 });
