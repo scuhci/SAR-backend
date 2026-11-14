@@ -36,7 +36,9 @@ async function withRetry(
 ) {
   for (let attempt = 1; ; attempt++) {
     if (Date.now() >= deadline) {
-      throw new Error("Time budget for store requests used up");
+      const error = new Error("Time budget for store requests used up");
+      error.code = "TIME_BUDGET";
+      throw error;
     }
     try {
       return await fn();

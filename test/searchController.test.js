@@ -16,7 +16,10 @@ const store = {
   primary: [],
   primaryEntries: null,
   related: () => [],
+  onRelated: null,
   failApp: () => null, // (appId, attemptNumber) => Error | null
+  searchCalls: [],
+  probeRequestOptions: [],
   appCalls: [],
   inFlight: 0,
   maxInFlight: 0,
@@ -24,15 +27,21 @@ const store = {
 
 const entry = (appId) => ({ appId, title: `Title ${appId}`, summary: "s" });
 
-gps.search = async (opts) =>
-  opts.term.startsWith("related to ")
-    ? store.related(opts.term.slice("related to ".length))
-    : store.primaryEntries ?? store.primary.map(entry);
+gps.search = async (opts) => {
+  store.searchCalls.push(opts);
+  if (opts.term.startsWith("related to ")) {
+    const term = opts.term.slice("related to ".length);
+    if (store.onRelated) await store.onRelated(term);
+    return store.related(term);
+  }
+  return store.primaryEntries ?? store.primary.map(entry);
+};
 
 gps.app = async (opts) => {
   // The controller first probes the query itself as an app ID; a keyword
   // is not one.
   if (!opts.appId.startsWith("com.")) {
+    store.probeRequestOptions.push(opts.requestOptions);
     const notFound = new Error("App not found (404)");
     notFound.status = 404;
     throw notFound;
@@ -111,13 +120,17 @@ const reset = ({
   primary,
   primaryEntries = null,
   related = () => [],
+  onRelated = null,
   failApp = () => null,
 }) => {
   Object.assign(store, {
     primary,
     primaryEntries,
     related,
+    onRelated,
     failApp,
+    searchCalls: [],
+    probeRequestOptions: [],
     appCalls: [],
     inFlight: 0,
     maxInFlight: 0,
@@ -157,6 +170,18 @@ const quiet = () => {
   const saved = [console.log, console.error, console.warn];
   console.log = console.error = console.warn = () => {};
   return () => ([console.log, console.error, console.warn] = saved);
+};
+
+const adjustableDateNow = (t) => {
+  const realDateNow = Date.now;
+  let offset = 0;
+  Date.now = () => realDateNow() + offset;
+  t.after(() => {
+    Date.now = realDateNow;
+  });
+  return (ms) => {
+    offset += ms;
+  };
 };
 
 test("N-DATA-01: featured primary card recovers its app ID", async (t) => {
@@ -281,6 +306,7 @@ test("GSR-02: when every detail fetch fails the search answers 502 with the ids"
   reset({ primary: ["com.a", "com.b"], failApp: () => rateLimited() });
   const res = await runSearch("alldown");
   assert.equal(res.statusCode, 502);
+  assert.match(res.body.error, /did not return details/);
   assert.equal(res.body.partial, true);
   assert.deepEqual([...res.body.failedAppIds].sort(), ["com.a", "com.b"]);
 });
@@ -292,10 +318,75 @@ test("GSR-02: a clean search reports partial: false and the relog says none fail
   assert.equal(res.body.partial, false);
   assert.deepEqual(res.body.failedAppIds, []);
   assert.deepEqual(res.body.permissionsFailedAppIds, []);
+  assert.equal(res.body.relatedSearchesMissed, 0);
   const relog = runRelog("clean").body;
   assert.match(relog, /^num_failed: 0$/m);
   assert.match(relog, /^num_permissions_failed: 0$/m);
   assert.match(relog, /^permissions_failed_app_ids: none$/m);
+  assert.match(relog, /^num_related_searches_missed: 0$/m);
+});
+
+test("GSR-03: all search and app-ID probe calls receive bounded request options", async (t) => {
+  t.after(quiet());
+  reset({ primary: ["com.a"], related: () => [entry("com.b")] });
+  const res = await runSearch("options");
+  assert.equal(res.statusCode, 200);
+  assert.ok(store.searchCalls.length > 1);
+  for (const call of store.searchCalls) {
+    assert.deepEqual(call.requestOptions, { timeout: 20000, retry: 0 });
+  }
+  assert.deepEqual(store.probeRequestOptions, [
+    { timeout: 20000, retry: 0 },
+  ]);
+});
+
+test("GSR-03: related searches stop after their budget and report misses", async (t) => {
+  t.after(quiet());
+  const advance = adjustableDateNow(t);
+  let relatedCalls = 0;
+  reset({
+    primary: ["com.a", "com.b", "com.c"],
+    onRelated: () => {
+      relatedCalls++;
+      if (relatedCalls === 1) advance(121 * 1000);
+    },
+  });
+  const res = await runSearch("related budget");
+  assert.equal(res.statusCode, 200);
+  assert.equal(relatedCalls, 1);
+  assert.deepEqual(ids(res), ["com.a", "com.b", "com.c"]);
+  assert.equal(res.body.relatedSearchesMissed, 2);
+  assert.equal(res.body.partial, true);
+  assert.match(runRelog("related budget").body, /^num_related_searches_missed: 2$/m);
+});
+
+test("GSR-03: failed related searches are counted as misses", async (t) => {
+  t.after(quiet());
+  reset({
+    primary: ["com.a", "com.b"],
+    related: (title) => {
+      if (title === "Title com.a") throw new Error("related search failed");
+      return [];
+    },
+  });
+  const res = await runSearch("related failure");
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.relatedSearchesMissed, 1);
+  assert.equal(res.body.partial, true);
+});
+
+test("GSR-03: an expired search budget reports detail fetches left out of time", async (t) => {
+  t.after(quiet());
+  const advance = adjustableDateNow(t);
+  reset({
+    primary: ["com.a"],
+    onRelated: () => advance(201 * 1000),
+  });
+  const res = await runSearch("time budget");
+  assert.equal(res.statusCode, 502);
+  assert.match(res.body.error, /ran out of time/);
+  assert.deepEqual(res.body.failedAppIds, ["com.a"]);
+  assert.deepEqual(store.appCalls, []);
 });
 
 test("GSR-03: each distinct app is fetched once, at most 4 requests at a time", async (t) => {

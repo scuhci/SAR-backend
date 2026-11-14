@@ -44,7 +44,11 @@ test("GSR-03: no attempt is started after the deadline", async () => {
   let calls = 0;
   await assert.rejects(
     withRetry(async () => calls++, { deadline: Date.now() - 1 }),
-    /Time budget/,
+    (error) => {
+      assert.equal(error.code, "TIME_BUDGET");
+      assert.match(error.message, /Time budget/);
+      return true;
+    },
   );
   assert.equal(calls, 0);
 });

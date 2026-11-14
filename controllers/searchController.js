@@ -31,6 +31,9 @@ const STORE_CONCURRENCY = 4;
 // passed since the search began, so the response arrives well inside nginx's
 // 300 s proxy timeout; apps not fetched by then are reported in failedAppIds.
 const SEARCH_TIME_BUDGET_MS = 200 * 1000;
+// Related searches are not started once this long has passed since the search
+// began, which leaves the rest of the budget for details and permissions.
+const RELATED_SEARCH_BUDGET_MS = 120 * 1000;
 // Failure lists of each search, for the relog. Kept apart from the result
 // cache so a search takes one entry there, not two.
 const search_meta_ttl = new nodeTTL();
@@ -73,7 +76,8 @@ const searchController = async (req, res) => {
   const query = req.query.query;
   const permissions = req.query.includePermissions === "true";
   const country = req.query.countryCode;
-  const deadline = Date.now() + SEARCH_TIME_BUDGET_MS;
+  const startedAt = Date.now();
+  const deadline = startedAt + SEARCH_TIME_BUDGET_MS;
   console.log("[%s] Query Passed: %s\n", file_name, query);
   console.log("[%s] Country Code Passed: %s\n", file_name, country);
 
@@ -84,17 +88,31 @@ const searchController = async (req, res) => {
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
   try {
-    const mainResults = await search({ term: query, country: country });
+    const mainResults = await search({
+      term: query,
+      country: country,
+      requestOptions: REQUEST_OPTIONS,
+    });
     const relatedResults = [];
+    let relatedSearchesMissed = 0;
     // if an appID is passed as the query
     try {
-      const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
+      const fetched_appID = await app({
+        appId: query,
+        country: country,
+        requestOptions: REQUEST_OPTIONS,
+      }); // checking if our query is a valid app ID
       console.log("App ID passed\n");
       mainResults.splice(0, mainResults.length, fetched_appID);
     } catch (error) {
       // Secondary search for each primary result if required
       console.log("App ID not passed\n");
-      for (const mainResult of mainResults) {
+      for (let index = 0; index < mainResults.length; index++) {
+        if (Date.now() - startedAt >= RELATED_SEARCH_BUDGET_MS) {
+          relatedSearchesMissed += mainResults.length - index;
+          break;
+        }
+        const mainResult = mainResults[index];
         console.log(
           "[%s] Main Title Fetched: %s\n",
           file_name,
@@ -103,9 +121,14 @@ const searchController = async (req, res) => {
         const relatedQuery = `related to ${mainResult.title}`;
         try {
           relatedResults.push(
-            await search({ term: relatedQuery, country: country }),
+            await search({
+              term: relatedQuery,
+              country: country,
+              requestOptions: REQUEST_OPTIONS,
+            }),
           );
         } catch {
+          relatedSearchesMissed++;
           console.error(
             `Unable to fetch app details for appID: ${mainResult.appId}`,
           );
@@ -167,6 +190,7 @@ const searchController = async (req, res) => {
     // Fetch additional details (including genre) for each result, a few at a
     // time. Transient store failures are retried; apps that still fail are
     // reported back to the user instead of silently disappearing.
+    let timeBudgetFailures = 0;
     const detailedResults = await mapWithConcurrency(
       uniqueApps,
       STORE_CONCURRENCY,
@@ -183,6 +207,7 @@ const searchController = async (req, res) => {
           );
           return { ...appInfo, ...appDetails };
         } catch (error) {
+          if (error && error.code === "TIME_BUDGET") timeBudgetFailures++;
           console.error(
             "Error fetching app details for %s:",
             appInfo.appId,
@@ -225,14 +250,22 @@ const searchController = async (req, res) => {
         const pushQuery = "c:" + country + "_t:" + query + "_p:" + permissions;
         search_meta_ttl.push(
           pushQuery,
-          { failedAppIds: missingAppIds, permissionsFailedAppIds: [] },
+          {
+            failedAppIds: missingAppIds,
+            permissionsFailedAppIds: [],
+            relatedSearchesMissed,
+          },
           null,
           604800,
         ); // for the relog
         return res.status(502).json({
-          error: `Google Play did not return details for any of the ${missingAppIds.length} apps found. Please try again in a few minutes.`,
+          error:
+            timeBudgetFailures > 0
+              ? "The search ran out of time before the details of the apps found could be fetched. Please try again in a few minutes."
+              : `Google Play did not return details for any of the ${missingAppIds.length} apps found. Please try again in a few minutes.`,
           partial: true,
           failedAppIds: missingAppIds,
+          relatedSearchesMissed,
         });
       }
       throw new Error(`Search for '${query}' did not return any results.`);
@@ -492,7 +525,11 @@ const searchController = async (req, res) => {
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
     search_meta_ttl.push(
       pushQuery,
-      { failedAppIds: missingAppIds, permissionsFailedAppIds },
+      {
+        failedAppIds: missingAppIds,
+        permissionsFailedAppIds,
+        relatedSearchesMissed,
+      },
       null,
       604800,
     ); // for the relog
@@ -501,9 +538,12 @@ const searchController = async (req, res) => {
       totalCount: uniqueResults.length,
       results: resultsToSend,
       partial:
-        missingAppIds.length > 0 || permissionsFailedAppIds.length > 0,
+        missingAppIds.length > 0 ||
+        permissionsFailedAppIds.length > 0 ||
+        relatedSearchesMissed > 0,
       failedAppIds: missingAppIds,
       permissionsFailedAppIds,
+      relatedSearchesMissed,
     });
   } catch (error) {
     console.error("Error occurred during search:", error);
@@ -530,6 +570,7 @@ const downloadRelog = (req, res) => {
       const searchMeta = search_meta_ttl.get(pushQuery) || {};
       const failedAppIds = searchMeta.failedAppIds || [];
       const permissionsFailedAppIds = searchMeta.permissionsFailedAppIds || [];
+      const relatedSearchesMissed = searchMeta.relatedSearchesMissed || 0;
       const logInfo = {
         version: json_raw.version,
         date_time: new Date(),
@@ -544,6 +585,7 @@ const downloadRelog = (req, res) => {
           permissionsFailedAppIds.length > 0
             ? permissionsFailedAppIds.join(", ")
             : "none",
+        num_related_searches_missed: relatedSearchesMissed,
         permissions: req.query.includePermissions,
         info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
