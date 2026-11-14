@@ -177,7 +177,6 @@ const searchController = async (req, res) => {
     console.error("Missing search query");
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
-  const notifyKey = "c:" + country + "_t:" + query + "_p:" + permissions;
   try {
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
@@ -521,10 +520,18 @@ const searchController = async (req, res) => {
     });
   } catch (error) {
     console.error("Error occurred during search:", error);
-    notifySearchFailed(notifyKey, query, country);
     return res
       .status(500)
       .json({ error: "An error occurred while processing your request." });
+  } finally {
+    // The success path mails and removes the registration before it returns.
+    // If one is still here, this search ended some other way (an error, or an
+    // early return with no apps), so tell the registrant and remove it.
+    notifySearchFailed(
+      "c:" + country + "_t:" + query + "_p:" + permissions,
+      query,
+      country,
+    );
   }
 };
 
