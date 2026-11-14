@@ -113,6 +113,8 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
     'permissions', //This is the permissions data structure, which has a child object that contains individual permissions and their labels 
     //individual permissions and labels are added separately
   ];
+  // the lookup status only belongs in a CSV that has permission columns
+  if (!includePermissions) columnsToExclude.push('permissionsFetchFailed');
   // for reviews, 'title' is removed, so we account for that here
   if(source == 'reviews')
   {
@@ -146,8 +148,13 @@ function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions
           rowValues.push(`"similar app links"`);
         }
       } else if (source == 'app' && standardPermissionsList.includes(column)) {
-        const permission = row.permissions.find(p => p.permission === column);
-        rowValues.push(permission ? true : false);
+        if (row.permissions) {
+          const permission = row.permissions.find(p => p.permission === column);
+          rowValues.push(permission ? true : false);
+        } else {
+          // lookup failed: leave the cell empty, the permissionsFetchFailed column says why
+          rowValues.push('');
+        }
       }
       else if (column == 'dateScraped')
       {
