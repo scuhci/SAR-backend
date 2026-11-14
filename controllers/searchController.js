@@ -10,9 +10,23 @@ const file_name = path.basename(__filename);
 const cors = require("cors");
 const { globalAgent } = require("node:https");
 const router = require("../routes/searchRoutes");
+const { createThrottle } = require("../utilities/throttle");
+
+// Sweep expired result sets and cap how many are kept; see utilities/resultCache.js
+const { limitCache, createResultCache } = require("../utilities/resultCache");
+limitCache(node_ttl);
+// Primary apps whose related list could not be fetched, per stored search, so
+// the reproducibility log can say the results were incomplete.
+const relatedFailures = createResultCache();
 
 let csvData;
 let globalQuery;
+
+// Apple rate-limits bursts of lookups, so the store calls made while expanding
+// one keyword search share a throttle (utilities/throttle.js): at most
+// `concurrency` calls in flight and at least `spacingMs` between the start of
+// any two calls. Exported so tests can shorten the spacing.
+const lookupThrottle = { concurrency: 4, spacingMs: 250 };
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -53,6 +67,8 @@ const searchController = async (req, res) => {
     // if an appID is passed as the query
     const mainResults = await search({ term: query, country: country });
     const relatedResults = [];
+    const relatedFailedFor = [];
+    const mapThrottled = createThrottle(lookupThrottle.concurrency, lookupThrottle.spacingMs);
     try {
       const fetched_appID = await app({ appId: query, country: country }); // checking if our query is a valid app ID
       console.log("App ID passed\n");
@@ -60,20 +76,24 @@ const searchController = async (req, res) => {
     } catch (error) {
       // Secondary search for each primary result if required
       console.log("App ID not passed\n");
-      for (const mainResult of mainResults) {
-
+      const similarLists = await mapThrottled(mainResults, async (mainResult) => {
         console.log("[%s] Main Title Fetched: %s\n", file_name, mainResult.title);
         try {
-          relatedResults.push(...await similar({appId: mainResult.appId}));
+          // The numeric id skips the bundle-id lookup similar() would otherwise
+          // make; without country the library falls back to the US storefront.
+          return await similar({
+            id: mainResult.id,
+            appId: mainResult.appId,
+            country: country,
+          });
+        } catch (error) {
+          console.error(`Unable to fetch related apps for appID: ${mainResult.appId}`);
+          relatedFailedFor.push(mainResult.appId);
+          return [];
         }
-        catch {
-          console.error(`Unable to fetch app details for appID: ${mainResult.appId}`);
-        }
-        //const relatedQuery = `related to ${mainResult.title}`;
-        // relatedResults.push(await search({ term: relatedQuery }));
-
-        // Introduce a delay between requests (e.g., 1 second)
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+      });
+      for (const list of similarLists) {
+        relatedResults.push(...list);
       }
     }
 
@@ -100,41 +120,20 @@ const searchController = async (req, res) => {
       console.log("[%s] %s\n", file_name, result.title);
     }
     console.log("All results fetched\n");
-    // Fetch additional details (including genre) for each result
-    const detailedResults = await Promise.all(
-      allResults.map(async (appInfo) => {
-        try {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          const appDetails = await app({
-            appId: appInfo.appId,
-            country: country,
-          });
-          return { ...appInfo, ...appDetails };
-        } catch (error) {
-          console.error("Error fetching app details:", error);
-          return null;
-        }
-      })
-    );
-
-    // Filter out apps with missing details
-    const validResults = detailedResults.filter((appInfo) => appInfo !== null);
-
-    console.log(
-      "[%s] [%d] validResults:\n-------------------------\n",
-      file_name,
-      validResults.length
-    );
-    for (const result of validResults) {
-      console.log("[%s] %s\n", file_name, result.title);
-    }
-
-    // Remove duplicates based on appId
-    const uniqueResults = Array.from(
-      new Set(validResults.map((appInfo) => appInfo.appId))
-    ).map((appId) => {
-      return validResults.find((appInfo) => appInfo.appId === appId);
+    // search() and similar() already return complete app records, so no
+    // per-app detail lookup is needed. De-duplicate while preserving the first
+    // occurrence so primary results keep their source when lists overlap.
+    const seenAppIds = new Set();
+    const uniqueResults = allResults.filter((appInfo) => {
+      if (seenAppIds.has(appInfo.appId)) {
+        return false;
+      }
+      seenAppIds.add(appInfo.appId);
+      return true;
     });
+    // Retain the response field for compatibility; no per-app lookup is made
+    // any more, so individual app lookup failures cannot occur here.
+    const failedAppIds = [];
 
     if (uniqueResults.length === 0) {
       throw new Error(`Search for '${query}' did not return any results.`);
@@ -194,10 +193,19 @@ const searchController = async (req, res) => {
     const pushQuery = "c:" + country + "_t:" + query; // new relog key since results are based on country + search query now
     // we want users to get the CSV results corresponding to their entire search, so an update was necessary
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
+    if (relatedFailedFor.length > 0) {
+      relatedFailures.push(pushQuery, relatedFailedFor, null, 604800);
+    } else {
+      relatedFailures.del(pushQuery);
+    }
     console.log("CSV stored on backend");
     return res.json({
       totalCount: uniqueResults.length,
       results: resultsToSend,
+      // A failed related-app list means the results above are incomplete.
+      partial: relatedFailedFor.length > 0,
+      failedAppIds: failedAppIds,
+      relatedFailedFor: relatedFailedFor,
     });
   } catch (error) {
     console.error("Error occurred during search:", error);
@@ -205,6 +213,21 @@ const searchController = async (req, res) => {
       .status(500)
       .json({ error: "An error occurred while processing your request." });
   }
+};
+
+// Relog line for a search whose related-app lists were not all fetched
+const relatedFailureNote = (country, query) => {
+  const failedFor = relatedFailures.get("c:" + country + "_t:" + query);
+  if (!failedFor || failedFor.length === 0) {
+    return {};
+  }
+  return {
+    incomplete_results:
+      "Related apps could not be fetched for " +
+      failedFor.length +
+      " primary result(s): " +
+      failedFor.join(", "),
+  };
 };
 
 const downloadRelog = (req, res) => {
@@ -225,6 +248,12 @@ const downloadRelog = (req, res) => {
       // Implement store and country when applicable
       // Also, add additional options when applicable
       const logInfo_arr = Object.entries(logInfo);
+      // An incomplete_results line, if there is one, goes just before the info text
+      logInfo_arr.splice(
+        -1,
+        0,
+        ...Object.entries(relatedFailureNote(req.query.countryCode, req.query.query))
+      );
       for (var i = 0; i < logInfo_arr.length; i++) {
         logInfo_arr[i] = logInfo_arr[i].join(": ");
       }
@@ -258,6 +287,9 @@ const downloadCSV = (req, res) => {
       const pushQuery = "c:" + country + "_t:" + query; // to retrieve the csv information from node_ttl
       console.log("pushQuery used for CSV: %s\n", pushQuery);
       var csvInfo = node_ttl.get(pushQuery); // now that we're separating searches by country, we want to make sure users get the CSV response from the country they searched for
+      if (!csvInfo) {
+        return res.status(404).json({ error: "CSV data not available." });
+      }
       const csv = jsonToCsv(
         csvInfo,
         "app"
@@ -310,4 +342,5 @@ module.exports = {
   search: searchController,
   downloadCSV,
   downloadRelog,
+  lookupThrottle,
 };

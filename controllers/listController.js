@@ -1,4 +1,4 @@
-const { list } = require("app-store-scraper");
+const { list, collection: collections, category: categories } = require("app-store-scraper");
 const { jsonToCsv } = require('../utilities/jsonToCsv');
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
@@ -8,21 +8,59 @@ const cors = require("cors");
 const path = require("path");
 const file_name = path.basename(__filename);
 
+// Sweep expired result sets and cap how many are kept; see utilities/resultCache.js
+const { limitCache } = require("../utilities/resultCache");
+limitCache(node_ttl);
 
+
+// Largest limit app-store-scraper accepts. Apple's RSS feed itself stops at
+// about 100 entries whatever limit is sent, so a full chart is about 100 apps.
 const MAX_APPS_COUNT = 200;
+// Apple's RSS feed returns feed.entry as a single object (not an array) when
+// limit=1, which makes app-store-scraper's list() throw "apps.map is not a
+// function". Always ask the library for at least 2 and trim the result below.
+const MIN_LIST_REQUEST = 2;
+// Storefront app-store-scraper falls back to when no country is given
+const DEFAULT_COUNTRY = "US";
+
+// app-store-scraper assumes feed.entry exists and calls map() on it. Apple omits
+// that key for a valid empty chart, so treat only that TypeError as an empty list.
+const isEmptyFeedError = (error) =>
+  error instanceof TypeError && /Cannot read propert(y|ies)[^]*\bmap\b/.test(error.message);
+
+// The library defaults to 50 and rejects anything above 200, so always use
+// an explicit, validated count. Anything missing or invalid asks for the
+// largest limit, which Apple answers with the whole chart (about 100 apps).
+const effectiveNum = (num) =>
+  Number.isInteger(num) && num > 0 && num < MAX_APPS_COUNT ? num : MAX_APPS_COUNT;
+
+// Key under which a chart's rows are kept for the CSV download. It is built
+// from the category code the scraper was called with, not from the client's
+// categoryName, so a request whose name and code disagree cannot replace
+// another chart's rows. A full-chart request gets collection + category key +
+// country, which is the query string the website sends to /download-top-csv.
+// A request for fewer apps gets a "_n<num>" suffix so it is stored separately.
+const buildChartKey = (collection, category, country, num) => {
+  const categoryKey =
+    Object.keys(categories).find((name) => categories[name] === category) || "";
+  const base = `${collection}${categoryKey}${country || ""}`;
+  const count = effectiveNum(num);
+  return count < MAX_APPS_COUNT ? `${base}_n${count}` : base;
+};
 
 const fetchList = async (collection, category, num, country) => {
-    options = {
+    const numAppsToFetch = effectiveNum(num);
+    const options = {
       category: category,
       collection: collection,
       country: country,
+      num: Math.max(numAppsToFetch, MIN_LIST_REQUEST),
       fullDetail: true,
     };
-  
+
     try {
-      let numAppsToFetch = num && num < MAX_APPS_COUNT ? num : MAX_APPS_COUNT;
       console.log(options);
-      const toplist = await list(options);
+      let toplist = await list(options);
 
       for (const result of toplist) {
         console.log(`[%s] App Title: %s\n`, file_name, result.title);
@@ -34,6 +72,9 @@ const fetchList = async (collection, category, num, country) => {
   
       return toplist;
     } catch (error) {
+      if (isEmptyFeedError(error)) {
+        return [];
+      }
       console.error("Error scraping top list.", error);
       throw new Error("An error occurred while scraping for top list.");
     }
@@ -45,13 +86,22 @@ const fetchList = async (collection, category, num, country) => {
     const category = Number(req.query.category);
     const categoryName = req.query.categoryName;
     const country = req.query.country;
-    const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
+    // Number(), not parseInt(): "12abc" or "3.9" must count as invalid, not as 12 or 3
+    const num = req.query.num ? Number(req.query.num) : MAX_APPS_COUNT;
     const permissions = false;
     const query = collection.concat(categoryName, country);
   
     try {
+      const chartKey = buildChartKey(collection, category, country, num);
       // Fetch top list based on the count or the maximum limit
-      const toplist = await fetchList(collection, category, num, country);
+      const fetchedList = await fetchList(collection, category, num, country);
+      // Tag each row with the storefront and chart it came from, like search results do.
+      // Without a country the library reads the US chart, so say that instead of "undefined".
+      const toplist = fetchedList.map((result) => ({
+        ...result,
+        country: country || DEFAULT_COUNTRY,
+        collection: collection,
+      }));
       console.log(`Scraped Top ${toplist.length} Apps for ${collection} and ${category}`);
       
       /*
@@ -105,13 +155,15 @@ const fetchList = async (collection, category, num, country) => {
         csvData = toplist;
       }
 
-      node_ttl.push(query, csvData, null, 604800);
-      console.log(query);
+      node_ttl.push(chartKey, csvData, null, 604800);
+      console.log(chartKey);
       console.log("CSV stored on backend");
   
       return res.json({
         totalCount: resultsToSend.length,
         results: resultsToSend,
+        // Pass this as ?query= to /download-top-csv to get exactly these rows
+        downloadQuery: chartKey,
       });
     } catch (error) {
       console.error("Error getting top list:", error);
@@ -173,6 +225,9 @@ const fetchList = async (collection, category, num, country) => {
         const permissions = req.query.includePermissions === 'true';
         console.log("Query used for CSV: %s\n", query);
         var csvInfo = node_ttl.get(query);
+        if (!csvInfo) {
+          return res.status(404).json({ error: "CSV data not available." });
+        }
         const csv = jsonToCsv(csvInfo, 'app');
         // Get the current timestamp in the desired format
         const timestamp = new Date().toLocaleString('en-US', {
