@@ -104,6 +104,8 @@ const fetchList = async (collection, category, num, country) => {
         resultsToSend = toplist;
         csvData = toplist;
       }
+      // dateScraped in the CSV is this moment, not the download time
+      require('../utilities/jsonToCsv').recordScrapeTime(csvData);
 
       node_ttl.push(query, csvData, null, 604800);
       console.log(query);

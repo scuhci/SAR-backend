@@ -73,9 +73,26 @@ function fixColumns(oldColumns, source)
   return columns;
 }
 
+// When a result set was scraped, keyed by the rows array the controllers
+// cache. CSVs are built later, on download, and must carry the scrape time.
+const scrapeTimes = new WeakMap();
+
+function recordScrapeTime(rows, scrapedAt = new Date()) {
+  if (rows && typeof rows === 'object') {
+    scrapeTimes.set(rows, scrapedAt);
+  }
+  return rows;
+}
+
+function getScrapeTime(rows) {
+  return rows && typeof rows === 'object' ? scrapeTimes.get(rows) : undefined;
+}
+
 function jsonToCsv(jsonData, source) {
   const csvRows = [];
-  const currentTime = new Date();
+  // dateScraped is when the rows were scraped; rows nobody recorded a time
+  // for (reviews are converted as soon as they are fetched) get the current time
+  const currentTime = getScrapeTime(jsonData) || new Date();
 
   // console.log(jsonData);
 
@@ -160,4 +177,6 @@ function jsonToCsv(jsonData, source) {
 module.exports = {
   cleanText, 
   jsonToCsv,
+  recordScrapeTime,
+  getScrapeTime,
 };
