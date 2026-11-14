@@ -30,6 +30,12 @@ const tooManySkipped = (loadedCount, skippedCount) => {
 // of the same chart by another user replaces the data behind someone else's download.
 const cacheKey = (query, num, permissions) => `${query}_n:${num}_p:${permissions}`;
 
+// The stored scrape for a chart, whichever way the permissions checkbox was set. The frontend
+// sends the checkbox's current state, which may have changed since the scrape; the relog only
+// needs the skipped list, which both variants carry.
+const getResultEntry = (query, num, permissions) =>
+    node_ttl.get(cacheKey(query, num, permissions)) || node_ttl.get(cacheKey(query, num, !permissions));
+
 // Load the full detail page for every app in the chart, a few at a time and in chart order.
 // gplay.list({ fullDetail: true }) does this with Promise.all, so one app whose detail page
 // fails (removed from the store, or a page the parser cannot read) rejected the whole chart.
@@ -55,7 +61,7 @@ const fetchDetails = async (apps, country) => {
     settled.forEach((result, index) => {
         const app = apps[index];
         if (result.detail) {
-            details.push(result.detail);
+            details.push({ rank: index + 1, ...result.detail });
         } else {
             console.error(`[%s] Skipping %s (%s): detail fetch failed: %s`, file_name, app.appId, app.title, result.error);
             skipped.push({ rank: index + 1, appId: app.appId, title: app.title, error: result.error });
@@ -182,7 +188,8 @@ const scrapeList = async (req, res) => {
             csvData = toplist;
         }
 
-        node_ttl.push(cacheKey(query, num, permissions), csvData, null, 604800);
+        // One entry per scrape: the CSV rows plus the skipped apps the relog reports.
+        node_ttl.push(cacheKey(query, num, permissions), { rows: csvData, skipped: skipped }, null, 604800);
         console.log(cacheKey(query, num, permissions));
         console.log("CSV stored on backend");
 
@@ -204,6 +211,24 @@ const downloadTopChartsRelog = (req, res) => {
     // Info text, Reviews Log?
     cors()(req, res, () => {
         try {
+            // The log is built from query params, so the skipped apps come from the stored scrape.
+            const { collection, category, country } = req.query;
+            const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
+            const permissions = req.query.includePermissions === "true";
+            const stored =
+                collection && category && country
+                    ? getResultEntry(collection.concat(category, country), num, permissions)
+                    : null;
+            const skippedInfo = {};
+            if (stored && Array.isArray(stored.skipped)) {
+                skippedInfo.num_skipped = stored.skipped.length;
+                skippedInfo.skipped_app_ids =
+                    stored.skipped.map((app) => `${app.appId} (rank ${app.rank})`).join("; ") || "none";
+            } else {
+                // Expired or evicted: say so instead of claiming nothing was skipped.
+                skippedInfo.num_skipped =
+                    "unknown (the stored results for this chart have expired; scrape it again to record skipped apps)";
+            }
             const logInfo = {
                 version: json_raw.version,
                 date_time: new Date(),
@@ -212,6 +237,7 @@ const downloadTopChartsRelog = (req, res) => {
                 collection: req.query.collection,
                 category: req.query.category,
                 num_results: req.query.totalCount,
+                ...skippedInfo,
                 permissions: req.query.includePermissions,
                 info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
             };
@@ -255,7 +281,7 @@ const downloadTopChartsCSV = (req, res) => {
                     error: "Results for this search were not found or have expired. Please search again.",
                 });
             }
-            const csv = jsonToCsv(csvInfo, "app", standardPermissionsList, permissions);
+            const csv = jsonToCsv(csvInfo.rows, "app", standardPermissionsList, permissions);
             // Get the current timestamp in the desired format
             const timestamp = new Date().toLocaleString("en-US", {
                 month: "numeric",
