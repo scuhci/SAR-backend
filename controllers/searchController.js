@@ -7,8 +7,9 @@ const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
+const { createResultCache } = require("../utilities/resultCache");
 const nodemailer = require("nodemailer");
-var node_ttl = new nodeTTL();
+var node_ttl = createResultCache();
 
 const path = require("path");
 const file_name = path.basename(__filename);

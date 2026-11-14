@@ -3,14 +3,72 @@ const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
-const nodeTTL = require("node-ttl");
-var node_ttl = new nodeTTL();
+const { createResultCache } = require("../utilities/resultCache");
+require("../utilities/gplayCategoryGuard");
+var node_ttl = createResultCache();
 
 const cors = require("cors");
 const path = require("path");
 const file_name = path.basename(__filename);
 
 const MAX_APPS_COUNT = 1000000;
+// How many app detail pages to request from the store at once.
+const DETAIL_FETCH_CONCURRENCY = 10;
+// A healthy chart skips nothing or a handful of apps. More than this share failing means the
+// store is throttling or failing, and a chart with that many holes is not worth returning.
+const MAX_SKIPPED_SHARE = 0.1;
+
+// One skipped app is always tolerated, so a small chart (num=5) survives a single removed app.
+const tooManySkipped = (loadedCount, skippedCount) => {
+    const total = loadedCount + skippedCount;
+    const allowed = Math.max(1, Math.floor(total * MAX_SKIPPED_SHARE));
+    return skippedCount > 0 && (loadedCount === 0 || skippedCount > allowed);
+};
+
+// The stored result set depends on the chart, how many apps were asked for and whether
+// permissions were fetched, so all of that goes into the cache key. Otherwise a later scrape
+// of the same chart by another user replaces the data behind someone else's download.
+const cacheKey = (query, num, permissions) => `${query}_n:${num}_p:${permissions}`;
+
+// The stored scrape for a chart, whichever way the permissions checkbox was set. The frontend
+// sends the checkbox's current state, which may have changed since the scrape; the relog only
+// needs the skipped list, which both variants carry.
+const getResultEntry = (query, num, permissions) =>
+    node_ttl.get(cacheKey(query, num, permissions)) || node_ttl.get(cacheKey(query, num, !permissions));
+
+// Load the full detail page for every app in the chart, a few at a time and in chart order.
+// gplay.list({ fullDetail: true }) does this with Promise.all, so one app whose detail page
+// fails (removed from the store, or a page the parser cannot read) rejected the whole chart.
+// Here a failed app is logged and reported in `skipped` instead.
+const fetchDetails = async (apps, country) => {
+    const settled = new Array(apps.length);
+    let next = 0;
+    const worker = async () => {
+        while (next < apps.length) {
+            const index = next++;
+            try {
+                const detail = await gplay.app({ appId: apps[index].appId, lang: "en", country: country });
+                settled[index] = { detail };
+            } catch (err) {
+                settled[index] = { error: err && err.message ? err.message : String(err) };
+            }
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(DETAIL_FETCH_CONCURRENCY, apps.length) }, worker));
+
+    const details = [];
+    const skipped = [];
+    settled.forEach((result, index) => {
+        const app = apps[index];
+        if (result.detail) {
+            details.push({ rank: index + 1, ...result.detail });
+        } else {
+            console.error(`[%s] Skipping %s (%s): detail fetch failed: %s`, file_name, app.appId, app.title, result.error);
+            skipped.push({ rank: index + 1, appId: app.appId, title: app.title, error: result.error });
+        }
+    });
+    return { details, skipped };
+};
 
 const fetchList = async (collection, category, num, country) => {
     const options = {
@@ -19,7 +77,7 @@ const fetchList = async (collection, category, num, country) => {
         lang: "en",
         country: country,
         num: num,
-        fullDetail: true,
+        fullDetail: false,
     };
 
     try {
@@ -33,15 +91,19 @@ const fetchList = async (collection, category, num, country) => {
             throw new Error("Failed to fetch list from Google Play.");
         }
 
-        for (const result of toplist) {
-            console.log(`[%s] App Title: %s\n`, file_name, result.title);
-        }
-
         if (toplist.length > numAppsToFetch) {
             toplist = toplist.slice(0, numAppsToFetch);
         }
 
-        return toplist;
+        const { details, skipped } = await fetchDetails(toplist, country);
+
+        for (const result of details) {
+            console.log(`[%s] App Title: %s\n`, file_name, result.title);
+        }
+
+        // Tag each row with its storefront and chart, so rows from several chart exports can be told apart.
+        const rows = details.map((row) => ({ ...row, country, collection, category }));
+        return { toplist: rows, skipped: skipped };
     } catch (error) {
         console.error("Error scraping top list.", error);
         throw new Error("An error occurred while scraping for top list.");
@@ -54,19 +116,35 @@ const scrapeList = async (req, res) => {
     const category = req.query.category;
     const country = req.query.country;
     const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
-    const permissions = req.query.includePermissions;
+    const permissions = req.query.includePermissions === "true";
     const query = collection.concat(category, country);
+    let resultsToSend;
+    let csvData;
 
     try {
         // Fetch top list based on the count or the maximum limit
-        const toplist = await fetchList(collection, category, num, country);
+        const { toplist, skipped } = await fetchList(collection, category, num, country);
         console.log(`Scraped Top ${toplist.length} Apps for ${collection} and ${category}`);
+        if (skipped.length > 0) {
+            console.log(`Skipped ${skipped.length} apps whose detail page could not be fetched`);
+        }
+
+        if (tooManySkipped(toplist.length, skipped.length)) {
+            // Too many detail pages missing: the store is failing, not the chart short.
+            // Nothing is stored, so a later download cannot pick up the partial chart.
+            const total = toplist.length + skipped.length;
+            return res.status(502).json({
+                error: `Google Play did not return details for ${skipped.length} of ${total} apps in this chart. Please try again later.`,
+                skipped: skipped,
+            });
+        }
 
         if (!toplist || !Array.isArray(toplist) || toplist.length === 0) {
             console.log("No results returned from fetchList");
             return res.json({
                 totalCount: 0,
                 results: [],
+                skipped: skipped,
             });
         }
 
@@ -112,13 +190,16 @@ const scrapeList = async (req, res) => {
             csvData = toplist;
         }
 
-        node_ttl.push(query, csvData, null, 604800);
-        console.log(query);
+        // One entry per scrape: the CSV rows plus the skipped apps the relog reports.
+        node_ttl.push(cacheKey(query, num, permissions), { rows: csvData, skipped: skipped }, null, 604800);
+        console.log(cacheKey(query, num, permissions));
         console.log("CSV stored on backend");
 
         return res.json({
             totalCount: resultsToSend.length,
             results: resultsToSend,
+            // Chart entries whose detail page failed to load; not in results or the CSV.
+            skipped: skipped,
         });
     } catch (error) {
         console.error("Error getting top list:", error);
@@ -132,6 +213,24 @@ const downloadTopChartsRelog = (req, res) => {
     // Info text, Reviews Log?
     cors()(req, res, () => {
         try {
+            // The log is built from query params, so the skipped apps come from the stored scrape.
+            const { collection, category, country } = req.query;
+            const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
+            const permissions = req.query.includePermissions === "true";
+            const stored =
+                collection && category && country
+                    ? getResultEntry(collection.concat(category, country), num, permissions)
+                    : null;
+            const skippedInfo = {};
+            if (stored && Array.isArray(stored.skipped)) {
+                skippedInfo.num_skipped = stored.skipped.length;
+                skippedInfo.skipped_app_ids =
+                    stored.skipped.map((app) => `${app.appId} (rank ${app.rank})`).join("; ") || "none";
+            } else {
+                // Expired or evicted: say so instead of claiming nothing was skipped.
+                skippedInfo.num_skipped =
+                    "unknown (the stored results for this chart have expired; scrape it again to record skipped apps)";
+            }
             const logInfo = {
                 version: json_raw.version,
                 date_time: new Date(),
@@ -140,6 +239,7 @@ const downloadTopChartsRelog = (req, res) => {
                 collection: req.query.collection,
                 category: req.query.category,
                 num_results: req.query.totalCount,
+                ...skippedInfo,
                 permissions: req.query.includePermissions,
                 info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
             };
@@ -165,17 +265,25 @@ const downloadTopChartsRelog = (req, res) => {
 const downloadTopChartsCSV = (req, res) => {
     // Use cors middleware for downloadCSV route
     cors()(req, res, () => {
-        if (!csvData) {
-            return res.status(404).json({ error: "CSV data not available." });
-        }
-
         try {
             // Use the existing jsonToCsv method to convert JSON to CSV
             const query = req.query.query;
+            const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
             const permissions = req.query.includePermissions === "true";
-            console.log("Query used for CSV: %s\n", query);
-            var csvInfo = node_ttl.get(query);
-            const csv = jsonToCsv(csvInfo, "app", standardPermissionsList, permissions);
+            console.log("Query used for CSV: %s\n", cacheKey(query, num, permissions));
+            let csvInfo = node_ttl.get(cacheKey(query, num, permissions));
+            if (!csvInfo && !permissions) {
+                // The frontend sends the checkbox's current state, which may have been unticked
+                // since the scrape. Rows scraped with permissions hold everything a CSV without
+                // them needs. The other direction cannot be served: those rows have no permissions.
+                csvInfo = node_ttl.get(cacheKey(query, num, true));
+            }
+            if (!csvInfo) {
+                return res.status(404).json({
+                    error: "Results for this search were not found or have expired. Please search again.",
+                });
+            }
+            const csv = jsonToCsv(csvInfo.rows, "app", standardPermissionsList, permissions);
             // Get the current timestamp in the desired format
             const timestamp = new Date().toLocaleString("en-US", {
                 month: "numeric",

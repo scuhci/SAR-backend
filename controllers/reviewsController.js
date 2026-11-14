@@ -2,8 +2,8 @@ const gplay = require("google-play-scraper");
 const { jsonToCsv } = require("../utilities/jsonToCsv");
 const cors = require("cors");
 const json_raw = require("../package.json");
-const nodeTTL = require("node-ttl");
-var node_ttl = new nodeTTL();
+const { createResultCache } = require("../utilities/resultCache");
+var node_ttl = createResultCache({ maxEntries: 10000 }); // one review count per app, so these are tiny
 
 const MAX_REVIEWS_COUNT = 10000; //Fixed value for now, can be updated for future development
 
