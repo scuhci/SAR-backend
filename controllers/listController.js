@@ -66,7 +66,7 @@ const fetchList = async (collection, category, num, country) => {
     if (category !== undefined && !Object.values(categories).includes(category)) {
       return res.status(400).json({ error: "Invalid 'category' query parameter." });
     }
-    // The scraper silently uses the US store for a country it does not know.
+    // list() uses the US chart for a country missing from the library's markets table.
     // No country at all is left alone: that is the library's own US default.
     if (country && !isSupportedCountry(country)) {
       return res.status(400).json({ error: UNSUPPORTED_COUNTRY_ERROR });

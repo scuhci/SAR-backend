@@ -37,7 +37,10 @@ function calculateResultSimilarityScore(result) {
   return result;
 }
 
-const { isSupportedCountry, UNSUPPORTED_COUNTRY_ERROR } = require("../utilities/country");
+const {
+  isSupportedCountry,
+  KEYWORD_SEARCH_UNSUPPORTED_COUNTRY_ERROR,
+} = require("../utilities/country");
 
 const searchController = async (req, res) => {
   const query = req.query.query;
@@ -51,14 +54,13 @@ const searchController = async (req, res) => {
     console.error("Missing search query");
     return res.status(400).json({ error: "Search query is missing.\n" });
   }
-  // The scraper silently uses the US store for a country it does not know.
-  // No country at all is left alone: that is the library's own US default.
-  if (country && !isSupportedCountry(country)) {
-    return res.status(400).json({ error: UNSUPPORTED_COUNTRY_ERROR });
-  }
+  // search() and similar() use the US storefront for a country missing from the
+  // library's markets table; the id / bundle-id lookup sends the country to Apple
+  // as given. So for such a country only the lookup is run.
+  const keywordSearchable = !country || isSupportedCountry(country);
   try {
     // if an appID is passed as the query
-    const mainResults = await search({ term: query, country: country });
+    const mainResults = keywordSearchable ? await search({ term: query, country: country }) : [];
     const relatedResults = [];
     try {
       // checking if our query is a valid app ID: all digits is the numeric id
@@ -73,6 +75,9 @@ const searchController = async (req, res) => {
       console.log("App ID passed\n");
       mainResults.splice(0, mainResults.length, fetched_appID);
     } catch (error) {
+      if (!keywordSearchable) {
+        return res.status(400).json({ error: KEYWORD_SEARCH_UNSUPPORTED_COUNTRY_ERROR });
+      }
       // Secondary search for each primary result if required
       console.log("App ID not passed\n");
       for (const mainResult of mainResults) {

@@ -1,6 +1,5 @@
 const iosStore = require("app-store-scraper");
 const { jsonToCsv } = require("../utilities/jsonToCsv");
-const { isSupportedCountry, UNSUPPORTED_COUNTRY_ERROR } = require("../utilities/country");
 const cors = require("cors");
 const json_raw = require("../package.json");
 const nodeTTL = require("node-ttl");
@@ -90,11 +89,6 @@ const scrapeReviews = async (req, res) => {
   // console.log("AppID: %s\n", appId);
   // console.log("CountryCode: %s\n", countryCode);
 
-  // The scraper silently uses the US store for a country it does not know.
-  // No country at all is left alone: that is the library's own US default.
-  if (countryCode && !isSupportedCountry(countryCode)) {
-    return res.status(400).json({ error: UNSUPPORTED_COUNTRY_ERROR });
-  }
   try {
     // Get the actual count of reviews
     const appDetails = await iosStore.app({
