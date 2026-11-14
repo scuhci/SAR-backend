@@ -172,7 +172,7 @@ test("GSR-06: stops at 10,000 rows and the relog reports rows written", async (t
 });
 
 test("GSR-07: reviews are requested in the store country's language", async (t) => {
-    const cases = { JP: "ja", jp: "ja", DE: "de", BR: "pt", TW: "zh-TW", CN: "zh-CN", MX: "es", US: "en", GB: "en", IN: "en", AQ: "en" };
+    const cases = { JP: "ja", jp: "ja", DE: "de", BR: "pt", TW: "zh-TW", CN: "zh-CN", MX: "es", US: "en", GB: "en", IN: "en", AQ: "en", ZZ: "en" };
     const requests = stubStore(t, { reported: 2, pages: [page(0, 2, null)] });
     for (const [countryCode, lang] of Object.entries(cases)) {
         requests.length = 0;
@@ -182,6 +182,35 @@ test("GSR-07: reviews are requested in the store country's language", async (t) 
         assert.equal(requests[0].country, countryCode);
         assert.equal(requests[0].lang, lang, countryCode);
     }
+});
+
+test("GSR-07: a missing or repeated countryCode falls back to English", async (t) => {
+    const requests = stubStore(t, { reported: 2, pages: [page(0, 2, null)] });
+    for (const countryCode of [undefined, "", ["JP", "US"]]) {
+        requests.length = 0;
+        const { res } = await scrape({ countryCode });
+        assert.equal(res.statusCode, 200);
+        assert.equal(requests.length, 1);
+        assert.equal(requests[0].lang, "en");
+    }
+});
+
+test("a store error mid-scrape answers 500 and records nothing for the relog", async (t) => {
+    const appId = "com.example.failing";
+    const requests = stubStore(t, {
+        reported: 1000,
+        pages: (o) => {
+            if (o.nextPaginationToken === "TOKEN_B") throw new Error("store unavailable");
+            return o.nextPaginationToken ? page(150, 150, "TOKEN_B") : page(0, 150, "TOKEN_A");
+        },
+    });
+    const origError = console.error;
+    console.error = () => {};
+    t.after(() => { console.error = origError; });
+    const { res } = await scrape({ appId });
+    assert.equal(res.statusCode, 500);
+    assert.equal(requests.length, 3);
+    assert.equal(relog({ appId }).num_reviews, "");
 });
 
 test("GSR-07: the relog records the language the reviews were fetched in", async (t) => {
