@@ -17,10 +17,12 @@ const store = {
   primaryEntries: null,
   related: () => [],
   onRelated: null,
+  onApp: null,
   failApp: () => null, // (appId, attemptNumber) => Error | null
   searchCalls: [],
   probeRequestOptions: [],
   appCalls: [],
+  appRequestOptions: [],
   inFlight: 0,
   maxInFlight: 0,
 };
@@ -47,6 +49,8 @@ gps.app = async (opts) => {
     throw notFound;
   }
   store.appCalls.push(opts.appId);
+  store.appRequestOptions.push(opts.requestOptions);
+  if (store.onApp) await store.onApp(opts.appId);
   store.inFlight++;
   store.maxInFlight = Math.max(store.maxInFlight, store.inFlight);
   try {
@@ -61,6 +65,7 @@ gps.app = async (opts) => {
 };
 gps.permissions = async (opts) => {
   store.permissionCalls.push(opts.appId);
+  store.permissionRequestOptions.push(opts.requestOptions);
   store.permissionsInFlight++;
   store.maxPermissionsInFlight = Math.max(
     store.maxPermissionsInFlight,
@@ -121,6 +126,7 @@ const reset = ({
   primaryEntries = null,
   related = () => [],
   onRelated = null,
+  onApp = null,
   failApp = () => null,
 }) => {
   Object.assign(store, {
@@ -128,13 +134,16 @@ const reset = ({
     primaryEntries,
     related,
     onRelated,
+    onApp,
     failApp,
     searchCalls: [],
     probeRequestOptions: [],
     appCalls: [],
+    appRequestOptions: [],
     inFlight: 0,
     maxInFlight: 0,
     permissionCalls: [],
+    permissionRequestOptions: [],
     permissionsInFlight: 0,
     maxPermissionsInFlight: 0,
   });
@@ -414,4 +423,66 @@ test("GSR-03: permission lookups are bounded to 4 at a time", async (t) => {
   assert.equal(res.body.totalCount, 10);
   assert.equal(store.permissionCalls.length, 10);
   assert.ok(store.maxPermissionsInFlight <= 4, `max was ${store.maxPermissionsInFlight}`);
+});
+
+test("GSR-03: detail and permission calls carry bounded request options", async (t) => {
+  t.after(quiet());
+  reset({ primary: ["com.a", "com.b", "com.c"] });
+  const res = await runSearch("detail permission options", "true");
+  assert.equal(res.statusCode, 200);
+  assert.equal(store.appRequestOptions.length, 3);
+  assert.equal(store.permissionRequestOptions.length, 3);
+  for (const requestOptions of store.appRequestOptions) {
+    assert.deepEqual(requestOptions, { timeout: 20000, retry: 0 });
+  }
+  for (const requestOptions of store.permissionRequestOptions) {
+    assert.deepEqual(requestOptions, { timeout: 20000, retry: 0 });
+  }
+});
+
+test("GSR-03: detail phase stops starting requests after its budget expires", async (t) => {
+  t.after(quiet());
+  const advance = adjustableDateNow(t);
+  let advanced = false;
+  const primary = Array.from({ length: 12 }, (_, i) => `com.p${i}`);
+  reset({
+    primary,
+    onApp: () => {
+      if (!advanced) {
+        advanced = true;
+        advance(201 * 1000);
+      }
+    },
+  });
+  const res = await runSearch("detail deadline");
+  assert.equal(res.statusCode, 200);
+  assert.ok(store.appCalls.length <= 4);
+  assert.ok(store.appCalls.every((id) => ids(res).includes(id)));
+  assert.ok(store.appCalls.length >= 1);
+  assert.equal(res.body.results.length + res.body.failedAppIds.length, 12);
+  assert.ok(res.body.failedAppIds.length >= 8);
+  assert.equal(res.body.partial, true);
+});
+
+test("GSR-03: expired detail budget prevents permission requests", async (t) => {
+  t.after(quiet());
+  const advance = adjustableDateNow(t);
+  const primary = ["com.a", "com.b", "com.c"];
+  reset({
+    primary,
+    onApp: (appId) => {
+      if (appId === primary[primary.length - 1]) advance(201 * 1000);
+    },
+  });
+  const res = await runSearch("permission deadline", "true");
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.results.length, 3);
+  assert.deepEqual(store.permissionCalls, []);
+  assert.ok(res.body.results.every((result) => result.permissionsFetchFailed === true));
+  assert.ok(res.body.results.every((result) =>
+    result.permissions.every((permission) => permission.isPermissionRequired === null),
+  ));
+  assert.deepEqual(res.body.permissionsFailedAppIds, primary);
+  assert.equal(res.body.partial, true);
+  assert.deepEqual(res.body.failedAppIds, []);
 });
