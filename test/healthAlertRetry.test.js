@@ -1,6 +1,7 @@
 // A flagged scraper must reach every address in ALERT_EMAILS: a failed alert send is
 // retried on the next failing check, and one bad recipient does not stop the others.
-// Store calls and the mail transport are stubbed; nothing is sent.
+// Store calls and the mail transport are stubbed; nothing is sent. The recovery mail
+// goes out on the third healthy check in a row (see healthFlapping.test.js).
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -26,6 +27,7 @@ async function runScenario(t, { storeDownThrough, totalChecks, smtpFails }) {
   const previousThreshold = process.env.HEALTH_FAILURE_THRESHOLD;
   process.env.ALERT_EMAILS = recipients.join(",");
   delete process.env.HEALTH_FAILURE_THRESHOLD;
+  delete process.env.HEALTH_RECOVERY_THRESHOLD;
 
   t.after(() => {
     if (previousAlertEmails === undefined) {
@@ -85,15 +87,15 @@ async function runScenario(t, { storeDownThrough, totalChecks, smtpFails }) {
 test("A: sends one alert to each recipient and recovery on healthy SMTP", async (t) => {
   const result = await runScenario(t, {
     storeDownThrough: 6,
-    totalChecks: 7,
+    totalChecks: 9,
     smtpFails: () => false,
   });
 
   assert.deepEqual(result.mails, [
     "ALERT->dev1@example.invalid@check3",
     "ALERT->dev2@example.invalid@check3",
-    "RESOLVED->dev1@example.invalid@check7",
-    "RESOLVED->dev2@example.invalid@check7",
+    "RESOLVED->dev1@example.invalid@check9",
+    "RESOLVED->dev2@example.invalid@check9",
   ]);
   assert.equal(result.sendAttempts, 4);
 });
@@ -101,15 +103,15 @@ test("A: sends one alert to each recipient and recovery on healthy SMTP", async 
 test("B: retries failed alert recipients on the next failing check", async (t) => {
   const result = await runScenario(t, {
     storeDownThrough: 8,
-    totalChecks: 9,
+    totalChecks: 11,
     smtpFails: (_recipient, _subject, check) => check <= 3,
   });
 
   assert.deepEqual(result.mails, [
     "ALERT->dev1@example.invalid@check4",
     "ALERT->dev2@example.invalid@check4",
-    "RESOLVED->dev1@example.invalid@check9",
-    "RESOLVED->dev2@example.invalid@check9",
+    "RESOLVED->dev1@example.invalid@check11",
+    "RESOLVED->dev2@example.invalid@check11",
   ]);
   assert.equal(result.sendAttempts, 6);
 });
@@ -117,14 +119,14 @@ test("B: retries failed alert recipients on the next failing check", async (t) =
 test("C: retries only the recipient still owed an alert", async (t) => {
   const result = await runScenario(t, {
     storeDownThrough: 4,
-    totalChecks: 5,
+    totalChecks: 7,
     smtpFails: (recipient, subject) => recipient === recipients[0] && !subject.includes("RESOLVED"),
   });
 
   assert.deepEqual(result.mails, [
     "ALERT->dev2@example.invalid@check3",
-    "RESOLVED->dev1@example.invalid@check5",
-    "RESOLVED->dev2@example.invalid@check5",
+    "RESOLVED->dev1@example.invalid@check7",
+    "RESOLVED->dev2@example.invalid@check7",
   ]);
   assert.equal(result.sendAttempts, 5);
 });
@@ -146,14 +148,14 @@ test("D: does not repeat alerts after all recipients are notified", async (t) =>
 test("E: a recovery recipient failure does not stop the next recipient", async (t) => {
   const result = await runScenario(t, {
     storeDownThrough: 3,
-    totalChecks: 4,
+    totalChecks: 6,
     smtpFails: (recipient, subject) => recipient === recipients[0] && subject.includes("RESOLVED"),
   });
 
   assert.deepEqual(result.mails, [
     "ALERT->dev1@example.invalid@check3",
     "ALERT->dev2@example.invalid@check3",
-    "RESOLVED->dev2@example.invalid@check4",
+    "RESOLVED->dev2@example.invalid@check6",
   ]);
   assert.equal(result.sendAttempts, 4);
 });

@@ -16,6 +16,8 @@ const TEST_CONFIG = {
 const HEALTH_CHECK_INTERVAL = parseInt(process.env.HEALTH_CHECK_INTERVAL_MS) || 5 * 60 * 1000; // 5 minutes
 const CHECK_TIMEOUT = parseInt(process.env.HEALTH_CHECK_TIMEOUT_MS) || 10000; // 10 seconds
 const CONSECUTIVE_FAILURE_THRESHOLD = parseInt(process.env.HEALTH_FAILURE_THRESHOLD) || 3;
+// Healthy checks in a row needed before a flag is cleared and the recovery mail is sent.
+const CONSECUTIVE_HEALTHY_THRESHOLD = parseInt(process.env.HEALTH_RECOVERY_THRESHOLD) || CONSECUTIVE_FAILURE_THRESHOLD;
 
 // In-memory health status cache
 let healthStatus = {
@@ -38,6 +40,7 @@ let previousOverallStatus = null;
 
 // Consecutive failure counter
 let consecutiveFailureCount = 0;
+let consecutiveHealthyCount = 0;
 
 // Flag state
 let isFlagged = false;
@@ -530,6 +533,7 @@ async function checkAllServices() {
   // Track consecutive failures for degraded/unhealthy status
   if (overall === "degraded" || overall === "unhealthy") {
     consecutiveFailureCount++;
+    consecutiveHealthyCount = 0;
     console.log(`[HEALTH] Consecutive failure count: ${consecutiveFailureCount}`);
 
     // Flag if threshold reached
@@ -565,9 +569,10 @@ async function checkAllServices() {
       console.log(`[HEALTH] Consecutive failure count reset (was ${consecutiveFailureCount})`);
     }
     consecutiveFailureCount = 0;
+    consecutiveHealthyCount++;
 
     // Clear flag when healthy
-    if (isFlagged) {
+    if (isFlagged && consecutiveHealthyCount >= CONSECUTIVE_HEALTHY_THRESHOLD) {
       console.log(`[HEALTH] ✓ Flag cleared: Scraper health restored to healthy state.`);
       
       // Send recovery email to dev team
@@ -583,6 +588,8 @@ async function checkAllServices() {
       isFlagged = false;
       flaggedAt = null;
       pendingAlertRecipients = [];
+    } else if (isFlagged) {
+      console.log(`[HEALTH] Healthy check ${consecutiveHealthyCount}/${CONSECUTIVE_HEALTHY_THRESHOLD} while flagged; flag stays until the scraper is stable.`);
     }
   }
 
@@ -671,6 +678,7 @@ function resetFlag() {
     flaggedAt = null;
     pendingAlertRecipients = [];
     consecutiveFailureCount = 0;
+    consecutiveHealthyCount = 0;
     return { success: true, message: "Flag has been reset" };
   }
   return { success: false, message: "No flag to reset" };
