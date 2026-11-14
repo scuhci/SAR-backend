@@ -3,11 +3,6 @@ const { google } = require("googleapis");
 const natural = require("natural");
 const { search, app } = require("google-play-scraper");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
-const {
-  REQUEST_OPTIONS,
-  withRetry,
-  mapWithConcurrency,
-} = require("../utilities/storeRequests");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
@@ -18,6 +13,11 @@ var node_ttl = new nodeTTL();
 const path = require("path");
 const file_name = path.basename(__filename);
 const cors = require("cors");
+const {
+  REQUEST_OPTIONS,
+  withRetry,
+  mapWithConcurrency,
+} = require("../utilities/storeRequests");
 const { globalAgent } = require("node:https");
 const router = require("../routes/searchRoutes");
 
