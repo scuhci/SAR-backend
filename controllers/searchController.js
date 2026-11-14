@@ -243,12 +243,17 @@ const downloadRelog = (req, res) => {
         country: req.query.countryCode,
         search_query: req.query.query,
         num_results: req.query.totalCount,
-        ...relatedFailureNote(req.query.countryCode, req.query.query),
         info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
       // Implement store and country when applicable
       // Also, add additional options when applicable
       const logInfo_arr = Object.entries(logInfo);
+      // An incomplete_results line, if there is one, goes just before the info text
+      logInfo_arr.splice(
+        -1,
+        0,
+        ...Object.entries(relatedFailureNote(req.query.countryCode, req.query.query))
+      );
       for (var i = 0; i < logInfo_arr.length; i++) {
         logInfo_arr[i] = logInfo_arr[i].join(": ");
       }

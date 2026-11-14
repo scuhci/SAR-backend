@@ -236,6 +236,9 @@ test("relog names the primary apps whose related lists could not be fetched", as
     log,
     /incomplete_results: Related apps could not be fetched for 1 primary result\(s\): com\.example\.two/
   );
+  // the note sits between the result count and the closing info text
+  const keys = log.split("\n").map((line) => line.split(": ")[0]);
+  assert.deepStrictEqual(keys.slice(-3), ["num_results", "incomplete_results", "info"]);
 });
 
 test("relog has no incomplete line after a complete search, even one that was partial before", async () => {
