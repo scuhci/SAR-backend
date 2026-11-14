@@ -7,14 +7,14 @@ const path = require("node:path");
 
 // Fake store: 3 primary results, each with related apps that overlap.
 const primary = [
-  { id: 101, appId: "com.example.one", title: "One" },
-  { id: 102, appId: "com.example.two", title: "Two" },
-  { id: 103, appId: "com.example.three", title: "Three" },
+  { id: 101, appId: "com.example.one", title: "One", description: "d", genres: ["g"] },
+  { id: 102, appId: "com.example.two", title: "Two", description: "d", genres: ["g"] },
+  { id: 103, appId: "com.example.three", title: "Three", description: "d", genres: ["g"] },
 ];
 const similarByAppId = {
-  "com.example.one": ["com.example.sim1", "com.example.sim2", "com.example.sim3"],
+  "com.example.one": ["com.example.one", "com.example.sim1", "com.example.sim2", "com.example.sim3"],
   "com.example.two": ["com.example.sim2", "com.example.sim4", "com.example.sim5"],
-  "com.example.three": ["com.example.sim3", "com.example.sim5", "com.example.sim6"],
+  "com.example.three": ["com.example.sim3", "com.example.sim5", "com.example.sim7"],
 };
 const appIdById = Object.fromEntries(primary.map((a) => [a.id, a.appId]));
 
@@ -48,6 +48,8 @@ const stub = {
       return (similarByAppId[appId] || []).map((simId) => ({
         appId: simId,
         title: simId.split(".").pop(),
+        description: "d",
+        genres: ["g"],
       }));
     }),
   app: async (opts) => {
@@ -112,7 +114,7 @@ test("production lookup limits are 4 in flight and 250 ms between starts", () =>
   assert.deepStrictEqual(DEFAULT_LIMITS, { concurrency: 4, spacingMs: 250 });
 });
 
-test("keyword search has no per-result sleep, stays throttled and looks each app up once", async () => {
+test("keyword search uses full records, stays throttled and keeps first app occurrence", async () => {
   const res = makeRes();
   const started = Date.now();
   await search(makeReq(), res);
@@ -130,35 +132,55 @@ test("keyword search has no per-result sleep, stays throttled and looks each app
       `calls ${i - 1} and ${i} started ${starts[i] - starts[i - 1]} ms apart`
     );
   }
-  // 3 primary + 6 unique related apps; duplicates across lists are fetched once.
+  // Similar calls remain throttled; no per-app detail lookups are needed.
   assert.strictEqual(calls.similar.length, 3);
-  assert.strictEqual(calls.app.length, 9);
+  assert.strictEqual(calls.app.length, 0);
   assert.strictEqual(res.body.totalCount, 9);
+  const appIds = res.body.results.map((result) => result.appId);
+  assert.strictEqual(new Set(appIds).size, 9);
+  assert.strictEqual(
+    res.body.results.find((result) => result.appId === "com.example.one").source,
+    "primary search"
+  );
   assert.strictEqual(res.body.partial, false);
   assert.deepStrictEqual(res.body.failedAppIds, []);
   assert.deepStrictEqual(res.body.relatedFailedFor, []);
 });
 
-test("failed lookups are reported in the response instead of silently dropped", async () => {
-  failingAppIds = new Set(["com.example.sim2", "com.example.three"]);
+test("failed similar calls report incomplete related results without dropping primary apps", async () => {
   failingSimilar = new Set(["com.example.two"]);
   const res = makeRes();
   await search(makeReq(), res);
 
   assert.strictEqual(res.statusCode, 200);
-  // "two" has no related list, so sim4 is never found; sim2 and three fail lookup.
+  // "two" has no related list, so sim4 is never found.
   const returned = res.body.results.map((r) => r.appId).sort();
   assert.deepStrictEqual(returned, [
     "com.example.one",
     "com.example.sim1",
+    "com.example.sim2",
     "com.example.sim3",
     "com.example.sim5",
-    "com.example.sim6",
+    "com.example.sim7",
+    "com.example.three",
     "com.example.two",
   ]);
   assert.strictEqual(res.body.partial, true);
-  assert.deepStrictEqual([...res.body.failedAppIds].sort(), ["com.example.sim2", "com.example.three"]);
+  assert.deepStrictEqual(res.body.failedAppIds, []);
   assert.deepStrictEqual(res.body.relatedFailedFor, ["com.example.two"]);
+});
+
+test("store-delivered apps are kept even if redundant app lookups would fail", async () => {
+  failingAppIds = new Set(["com.example.three", "com.example.sim2"]);
+  const res = makeRes();
+  await search(makeReq(), res);
+
+  assert.strictEqual(res.statusCode, 200);
+  const appIds = res.body.results.map((result) => result.appId);
+  assert.ok(appIds.includes("com.example.three"));
+  assert.ok(appIds.includes("com.example.sim2"));
+  assert.deepStrictEqual(res.body.failedAppIds, []);
+  assert.strictEqual(calls.app.length, 0);
 });
 
 test("related apps are fetched from the storefront the user selected", async () => {

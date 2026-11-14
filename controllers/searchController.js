@@ -113,49 +113,20 @@ const searchController = async (req, res) => {
       console.log("[%s] %s\n", file_name, result.title);
     }
     console.log("All results fetched\n");
-    // Fetch additional details (including genre) for each result. Each appId
-    // is looked up once, and lookups that fail are reported, not just dropped.
+    // search() and similar() already return complete app records, so no
+    // per-app detail lookup is needed. De-duplicate while preserving the first
+    // occurrence so primary results keep their source when lists overlap.
     const seenAppIds = new Set();
-    const appsToLookUp = allResults.filter((appInfo) => {
+    const uniqueResults = allResults.filter((appInfo) => {
       if (seenAppIds.has(appInfo.appId)) {
         return false;
       }
       seenAppIds.add(appInfo.appId);
       return true;
     });
+    // Retain the response field for compatibility; no per-app lookup is made
+    // any more, so individual app lookup failures cannot occur here.
     const failedAppIds = [];
-    const detailedResults = await mapThrottled(appsToLookUp, async (appInfo) => {
-      try {
-        const appDetails = await app({
-          appId: appInfo.appId,
-          country: country,
-        });
-        return { ...appInfo, ...appDetails };
-      } catch (error) {
-        console.error("Error fetching app details for %s:", appInfo.appId, error);
-        failedAppIds.push(appInfo.appId);
-        return null;
-      }
-    });
-
-    // Filter out apps with missing details
-    const validResults = detailedResults.filter((appInfo) => appInfo !== null);
-
-    console.log(
-      "[%s] [%d] validResults:\n-------------------------\n",
-      file_name,
-      validResults.length
-    );
-    for (const result of validResults) {
-      console.log("[%s] %s\n", file_name, result.title);
-    }
-
-    // Remove duplicates based on appId
-    const uniqueResults = Array.from(
-      new Set(validResults.map((appInfo) => appInfo.appId))
-    ).map((appId) => {
-      return validResults.find((appInfo) => appInfo.appId === appId);
-    });
 
     if (uniqueResults.length === 0) {
       throw new Error(`Search for '${query}' did not return any results.`);
@@ -219,9 +190,8 @@ const searchController = async (req, res) => {
     return res.json({
       totalCount: uniqueResults.length,
       results: resultsToSend,
-      // Apps (or related-app lists) the store failed to return; non-empty
-      // means the results above are incomplete
-      partial: failedAppIds.length > 0 || relatedFailedFor.length > 0,
+      // A failed related-app list means the results above are incomplete.
+      partial: relatedFailedFor.length > 0,
       failedAppIds: failedAppIds,
       relatedFailedFor: relatedFailedFor,
     });
