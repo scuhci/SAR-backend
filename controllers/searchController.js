@@ -18,7 +18,128 @@ const router = require("../routes/searchRoutes");
 
 let csvData;
 let globalQuery;
-let emailMappings = {};
+
+// --- "Notify me" registrations -------------------------------------------
+// POST /email lets anyone ask the lab mailbox to send search results to an
+// address, so it is bounded on every axis. These numbers are starting points,
+// not tuned against real traffic; adjust them if legitimate users hit them.
+const NOTIFY_TTL_MS = 24 * 60 * 60 * 1000; // registrations expire after a day
+const NOTIFY_MAX_RECIPIENTS_PER_QUERY = 3;
+const NOTIFY_MAX_PENDING_QUERIES = 500;
+const NOTIFY_RATE_WINDOW_MS = 60 * 60 * 1000;
+const NOTIFY_RATE_MAX_PER_IP = 10; // registrations per client IP per window
+const NOTIFY_SWEEP_INTERVAL_MS = 60 * 1000;
+const MAX_EMAIL_LENGTH = 254;
+const MAX_QUERY_ID_LENGTH = 300;
+// Dot-atom local part (RFC 5322 atext, so first+tag@uni.edu and o'brien@x.ie
+// pass) and a hostname with a TLD. No quotes, spaces, commas or angle
+// brackets, so one value can only ever be one recipient.
+const ATEXT = "[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+";
+const LABEL = "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?";
+const EMAIL_REGEX = new RegExp(
+  `^${ATEXT}(?:\\.${ATEXT})*@(?:${LABEL}\\.)+[A-Za-z]{2,}$`,
+);
+// Same shape the search endpoint builds: c:<country>_t:<query>_p:<bool>
+const QUERY_ID_REGEX = /^c:[A-Za-z]{2}_t:[\s\S]+_p:(?:true|false)$/;
+
+// queryId -> { emails: string[], expiresAt: ms }
+const emailMappings = new Map();
+// client IP -> { count, resetAt: ms }
+const notifyHitsByIp = new Map();
+let lastNotifySweep = 0;
+let warnedLoopbackClient = false;
+
+// Drop expired entries from both tables. Runs at most once a minute, so the
+// per-IP table cannot grow beyond the IPs seen in the last window.
+function sweepNotifyTables(now, force = false) {
+  if (!force && now - lastNotifySweep < NOTIFY_SWEEP_INTERVAL_MS) return;
+  lastNotifySweep = now;
+  for (const [key, entry] of emailMappings)
+    if (entry.expiresAt <= now) emailMappings.delete(key);
+  for (const [ip, entry] of notifyHitsByIp)
+    if (entry.resetAt <= now) notifyHitsByIp.delete(ip);
+}
+
+function isNotifyRateLimited(ip, now) {
+  const key = String(ip || "unknown");
+  const entry = notifyHitsByIp.get(key);
+  if (!entry || entry.resetAt <= now) {
+    notifyHitsByIp.set(key, { count: 1, resetAt: now + NOTIFY_RATE_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > NOTIFY_RATE_MAX_PER_IP;
+}
+
+function isValidEmail(email) {
+  return (
+    typeof email === "string" &&
+    email.length <= MAX_EMAIL_LENGTH &&
+    email.indexOf("@") <= 64 &&
+    EMAIL_REGEX.test(email)
+  );
+}
+
+// A registered search that fails must still be answered, and the registration
+// must not survive to be mailed when someone else runs the same search later.
+// Sends a short plain-text notice; never throws and never logs the address.
+function notifySearchFailed(notifyKey, query, country) {
+  try {
+    const entry = emailMappings.get(notifyKey);
+    if (!entry) return;
+    emailMappings.delete(notifyKey);
+    if (entry.expiresAt <= Date.now() || entry.emails.length === 0) return;
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_PASS,
+      },
+    });
+    const text = `The search for "${String(query).slice(0, 200)}" (country ${country}) did not produce results (the store returned an error or no apps). Please run the search again on www.smar-tool.org.`;
+    for (const userEmail of entry.emails) {
+      transporter.sendMail(
+        {
+          from: '"Jeshwin from the SMAR Team" <smar-tool@googlegroups.com>',
+          to: userEmail,
+          subject: "[SMAR Tool] Your search could not be completed",
+          text,
+        },
+        (error) => {
+          if (error)
+            console.log(
+              "Email Error:",
+              error.code || "unknown",
+              error.responseCode || "",
+            );
+        },
+      );
+    }
+  } catch (error) {
+    console.log("Error sending failure notice:", error && error.code);
+  }
+}
+
+// Escape a value before interpolating it into the notification HTML.
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Reduce a search term to something safe for an attachment filename: letters
+// and digits in any script, plus . _ -
+function safeFilenamePart(value) {
+  const cleaned = String(value)
+    .replace(/[^\p{L}\p{N}._-]+/gu, "_")
+    .replace(/^[._-]+|[._-]+$/g, "")
+    .slice(0, 100);
+  return cleaned || "search";
+}
 
 // Calculate similarity
 function calculateJaccardSimilarity(set1, set2) {
@@ -236,13 +357,12 @@ const searchController = async (req, res) => {
 
     console.log(pushQuery);
     // email the user that their request is done
-    if (
-      emailMappings[pushQuery] &&
-      Array.isArray(emailMappings[pushQuery]) &&
-      emailMappings[pushQuery].length > 0
-    ) {
+    const notifyEntry = emailMappings.get(pushQuery);
+    if (notifyEntry && notifyEntry.expiresAt <= Date.now())
+      emailMappings.delete(pushQuery);
+    else if (notifyEntry && notifyEntry.emails.length > 0) {
       // get the email associated with a query
-      const userEmails = emailMappings[pushQuery];
+      const userEmails = notifyEntry.emails;
       (async () => {
         try {
           const transporter = nodemailer.createTransport({
@@ -278,7 +398,7 @@ const searchController = async (req, res) => {
             .map((component) => component.trim());
 
           const formattedTimestamp = `${dateComponents[0]}${dateComponents[1]}${timeComponents[0]}`;
-          const csvFilename = `${query}_${formattedTimestamp}.csv`;
+          const csvFilename = `${safeFilenamePart(query)}_${formattedTimestamp}.csv`;
 
           const htmlContent = `
               <!DOCTYPE html>
@@ -311,8 +431,8 @@ const searchController = async (req, res) => {
                           <div style="background-color: #f8f9fa; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
                               <h3 style="color: #333; margin: 0 0 15px 0; font-size: 18px;">Query Details:</h3>
                               <div style="color: #666; line-height: 1.6;">
-                                  <p style="margin: 5px 0;"><strong>Search Query:</strong> ${query}</p>
-                                  <p style="margin: 5px 0;"><strong>Country:</strong> ${country}</p>
+                                  <p style="margin: 5px 0;"><strong>Search Query:</strong> ${escapeHtml(query)}</p>
+                                  <p style="margin: 5px 0;"><strong>Country:</strong> ${escapeHtml(country)}</p>
                                   <p style="margin: 5px 0;"><strong>Include Permissions:</strong> ${
                                     permissions ? "Yes" : "No"
                                   }</p>
@@ -328,7 +448,7 @@ const searchController = async (req, res) => {
                               
                               <div style="background-color: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0; text-align: left;">
                                   <p style="margin: 0; color: #1976d2; font-size: 14px;">
-                                      <strong>📎 Attachment:</strong> ${csvFilename}<br>
+                                      <strong>📎 Attachment:</strong> ${escapeHtml(csvFilename)}<br>
                                       This CSV file contains all the app data you requested and can be opened in Excel, Google Sheets, or any spreadsheet application.
                                   </p>
                               </div>
@@ -371,15 +491,21 @@ const searchController = async (req, res) => {
                   ],
                 },
                 (error) => {
-                  if (error) console.log("Email Error:", error);
+                  // The error text can include the recipient; log the code only.
+                  if (error)
+                    console.log(
+                      "Email Error:",
+                      error.code || "unknown",
+                      error.responseCode || "",
+                    );
                 },
               );
             } catch (e) {
-              console.log("Error sending an email: ", e);
+              console.log("Error sending an email: ", e && e.code);
             }
           }
           console.log("Email Sent");
-          delete emailMappings[pushQuery];
+          emailMappings.delete(pushQuery);
         } catch (e) {
           console.log("Error sending emails: ", e);
         }
@@ -397,6 +523,15 @@ const searchController = async (req, res) => {
     return res
       .status(500)
       .json({ error: "An error occurred while processing your request." });
+  } finally {
+    // The success path mails and removes the registration before it returns.
+    // If one is still here, this search ended some other way (an error, or an
+    // early return with no apps), so tell the registrant and remove it.
+    notifySearchFailed(
+      "c:" + country + "_t:" + query + "_p:" + permissions,
+      query,
+      country,
+    );
   }
 };
 
@@ -504,10 +639,22 @@ const downloadCSV = (req, res) => {
 const addEmailNotification = (req, res) => {
   cors()(req, res, () => {
     try {
-      console.log("Received request on /search/email endpoint", req.query);
-
-      const queryId = req.query?.queryId;
-      const email = req.query?.email;
+      // The address is accepted only from the JSON body (a form post or a URL-only
+      // request is rejected, which also keeps cross-origin pages from registering
+      // addresses, since a JSON post needs a preflight this server does not answer);
+      // the query id may still come from the query string. Never log the address.
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      // The query id has to equal the key /search builds from its own query
+      // string. A frontend that does not URL-encode the term sends "disney+"
+      // as "disney " on both URLs, so a well-formed query-string copy is the
+      // one that will match; the body copy is used otherwise.
+      const qsId = req.query?.queryId;
+      const queryId =
+        typeof qsId === "string" && QUERY_ID_REGEX.test(qsId)
+          ? qsId
+          : (body.queryId ?? qsId);
+      const email = body.email;
+      console.log("Received request on /email endpoint");
 
       if (!queryId || !email)
         return res.status(400).json({
@@ -515,15 +662,70 @@ const addEmailNotification = (req, res) => {
           message: "uh oh, queryId or email wasn't processed right",
         });
 
-      if (!emailMappings[queryId])
-        emailMappings[queryId] = []; // initialize email array
+      if (!isValidEmail(email))
+        return res.status(400).json({
+          status: "error",
+          message: "Please enter a valid email address.",
+        });
 
-      // Avoid duplicates
-      if (!emailMappings[queryId].includes(email))
-        emailMappings[queryId].push(email);
+      if (
+        typeof queryId !== "string" ||
+        queryId.length > MAX_QUERY_ID_LENGTH ||
+        !QUERY_ID_REGEX.test(queryId)
+      )
+        return res.status(400).json({
+          status: "error",
+          message: "Unrecognized query id.",
+        });
+
+      const now = Date.now();
+      sweepNotifyTables(now);
+
+      // Behind nginx req.ip should never be loopback. If it is, the proxy is
+      // not sending X-Forwarded-For and every visitor shares one bucket.
+      if (!warnedLoopbackClient && /^(?:::ffff:)?127\.|^::1$/.test(String(req.ip))) {
+        warnedLoopbackClient = true;
+        console.warn(
+          "[/email] client address is loopback; if this is behind a proxy it is not sending X-Forwarded-For and the per-IP limit is shared by all visitors",
+        );
+      }
+
+      if (isNotifyRateLimited(req.ip, now))
+        return res.status(429).json({
+          status: "error",
+          message: "Too many notification requests, please try again later.",
+        });
+
+      let entry = emailMappings.get(queryId);
+      if (entry && entry.expiresAt <= now) {
+        emailMappings.delete(queryId);
+        entry = undefined;
+      }
+      if (!entry) {
+        if (emailMappings.size >= NOTIFY_MAX_PENDING_QUERIES)
+          sweepNotifyTables(now, true);
+        if (emailMappings.size >= NOTIFY_MAX_PENDING_QUERIES)
+          return res.status(429).json({
+            status: "error",
+            message: "Too many pending notifications, please try again later.",
+          });
+        entry = { emails: [], expiresAt: now + NOTIFY_TTL_MS };
+        emailMappings.set(queryId, entry);
+      }
+
+      // Avoid duplicates; mailboxes are case-insensitive in practice, so
+      // Victim@x and VICTIM@x count as one recipient.
+      const lower = email.toLowerCase();
+      if (!entry.emails.some((e) => e.toLowerCase() === lower)) {
+        if (entry.emails.length >= NOTIFY_MAX_RECIPIENTS_PER_QUERY)
+          return res.status(429).json({
+            status: "error",
+            message: "Too many recipients registered for this search.",
+          });
+        entry.emails.push(email);
+      }
 
       res.status(200).json({ status: "success" });
-      // console.log("Email Mapping test: ", emailMappings[queryId]);
     } catch (e) {
       console.log("Failed to add email", e);
       res.status(500).json({ status: "error", message: e });
@@ -536,4 +738,6 @@ module.exports = {
   downloadCSV,
   downloadRelog,
   addEmailNotification,
+  // For the test suite only; not used by any route.
+  _notifyInternals: { emailMappings, notifyHitsByIp },
 };
