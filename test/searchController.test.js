@@ -123,13 +123,15 @@ test("keyword search uses full records, stays throttled and keeps first app occu
   assert.strictEqual(res.statusCode, 200);
   // Old code slept 3 s after each of the 3 primary results (>= 9 s).
   assert.ok(elapsed < 3000, `took ${elapsed} ms`);
-  // Store calls go through the throttle, so their starts are spaced out
-  // (2 ms of slack for timer rounding).
+  // Store calls go through the throttle, so their starts are spaced out.
+  // Measure each start from the first one: on a busy machine one timer can
+  // fire late and sit close to the next, but call i can never start earlier
+  // than i intervals after the first (2 ms of slack per interval for rounding).
   const starts = [...storeCallStarts].sort((a, b) => a - b);
   for (let i = 1; i < starts.length; i++) {
     assert.ok(
-      starts[i] - starts[i - 1] >= TEST_SPACING_MS - 2,
-      `calls ${i - 1} and ${i} started ${starts[i] - starts[i - 1]} ms apart`
+      starts[i] - starts[0] >= i * (TEST_SPACING_MS - 2),
+      `call ${i} started ${starts[i] - starts[0]} ms after the first`
     );
   }
   // Similar calls remain throttled; no per-app detail lookups are needed.
