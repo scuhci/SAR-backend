@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const gplay = require("google-play-scraper");
-const { scrapeList } = require("../controllers/listController");
+const { scrapeList, downloadTopChartsCSV } = require("../controllers/listController");
 const mappingHelpers = require("google-play-scraper/lib/utils/mappingHelpers");
 
 const listEntry = (i) => ({ appId: "com.example.app" + i, title: "App " + i, summary: "summary " + i });
@@ -61,6 +61,49 @@ async function run(query) {
     return res;
 }
 
+async function download(query) {
+    const res = {
+        headers: {},
+        statusCode: 200,
+        setHeader(k, v) {
+            this.headers[k] = v;
+        },
+        getHeader(k) {
+            return this.headers[k];
+        },
+        status(code) {
+            this.statusCode = code;
+            return this;
+        },
+        json(body) {
+            this.body = body;
+        },
+        send(body) {
+            this.body = body;
+        },
+        end() {},
+    };
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+        await new Promise((resolve) => {
+            const origSend = res.send;
+            res.send = function (body) {
+                origSend.call(this, body);
+                resolve();
+            };
+            res.json = function (body) {
+                this.body = body;
+                resolve();
+            };
+            downloadTopChartsCSV({ query, headers: {}, method: "GET" }, res);
+        });
+    } finally {
+        console.log = origLog;
+    }
+    return res;
+}
+
 const QUERY = { collection: "TOP_FREE", category: "HEALTH_AND_FITNESS", country: "us", includePermissions: "false" };
 
 test("a store page without a category block no longer makes the scraper throw", () => {
@@ -87,6 +130,42 @@ test("one failing app detail no longer fails the whole chart", async () => {
     );
     assert.deepStrictEqual(res.body.skipped.map((app) => [app.rank, app.appId]), [[2, "com.example.app2"]]);
     assert.match(res.body.skipped[0].error, /reading 'length'/);
+});
+
+test("up to 10% of detail pages failing still returns the chart", async () => {
+    const entries = Array.from({ length: 200 }, (_, i) => listEntry(i + 1));
+    const failing = entries.slice(0, 20).map((entry) => entry.appId);
+    stubStore(entries, failing);
+    const res = await run({ ...QUERY, category: "GAME_ACTION" });
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.totalCount, 180);
+    assert.strictEqual(res.body.skipped.length, 20);
+});
+
+test("more than 10% of detail pages failing is a 502 and nothing is stored", async () => {
+    const entries = Array.from({ length: 200 }, (_, i) => listEntry(i + 1));
+    const failing = entries.slice(0, 21).map((entry) => entry.appId);
+    stubStore(entries, failing);
+    const query = { ...QUERY, category: "GAME_ARCADE" };
+    const res = await run(query);
+    assert.strictEqual(res.statusCode, 502);
+    assert.strictEqual(res.body.skipped.length, 21);
+    assert.match(res.body.error, /21 of 200/);
+
+    const dl = await download({
+        query: query.collection + query.category + query.country,
+        includePermissions: "false",
+    });
+    assert.strictEqual(dl.statusCode, 404);
+});
+
+test("almost every detail page failing is a 502, not a one-row chart", async () => {
+    const entries = Array.from({ length: 200 }, (_, i) => listEntry(i + 1));
+    const failing = entries.slice(1).map((entry) => entry.appId);
+    stubStore(entries, failing);
+    const res = await run({ ...QUERY, category: "GAME_CASUAL" });
+    assert.strictEqual(res.statusCode, 502);
+    assert.strictEqual(res.body.skipped.length, 199);
 });
 
 test("all details load: full details in chart order, nothing skipped, at most 10 requests at once", async () => {

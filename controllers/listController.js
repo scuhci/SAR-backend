@@ -14,6 +14,16 @@ const file_name = path.basename(__filename);
 const MAX_APPS_COUNT = 1000000;
 // How many app detail pages to request from the store at once.
 const DETAIL_FETCH_CONCURRENCY = 10;
+// A healthy chart skips nothing or a handful of apps. More than this share failing means the
+// store is throttling or failing, and a chart with that many holes is not worth returning.
+const MAX_SKIPPED_SHARE = 0.1;
+
+// One skipped app is always tolerated, so a small chart (num=5) survives a single removed app.
+const tooManySkipped = (loadedCount, skippedCount) => {
+    const total = loadedCount + skippedCount;
+    const allowed = Math.max(1, Math.floor(total * MAX_SKIPPED_SHARE));
+    return skippedCount > 0 && (loadedCount === 0 || skippedCount > allowed);
+};
 
 // The stored result set depends on the chart, how many apps were asked for and whether
 // permissions were fetched, so all of that goes into the cache key. Otherwise a later scrape
@@ -111,10 +121,12 @@ const scrapeList = async (req, res) => {
             console.log(`Skipped ${skipped.length} apps whose detail page could not be fetched`);
         }
 
-        if (toplist.length === 0 && skipped.length > 0) {
-            // The chart loaded but not one detail page did: the store is failing, not the chart empty.
+        if (tooManySkipped(toplist.length, skipped.length)) {
+            // Too many detail pages missing: the store is failing, not the chart short.
+            // Nothing is stored, so a later download cannot pick up the partial chart.
+            const total = toplist.length + skipped.length;
             return res.status(502).json({
-                error: "Google Play did not return details for any app in this chart. Please try again later.",
+                error: `Google Play did not return details for ${skipped.length} of ${total} apps in this chart. Please try again later.`,
                 skipped: skipped,
             });
         }
