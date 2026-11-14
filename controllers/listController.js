@@ -19,6 +19,11 @@ const MIN_LIST_REQUEST = 2;
 // Storefront app-store-scraper falls back to when no country is given
 const DEFAULT_COUNTRY = "US";
 
+// app-store-scraper assumes feed.entry exists and calls map() on it. Apple omits
+// that key for a valid empty chart, so treat only that TypeError as an empty list.
+const isEmptyFeedError = (error) =>
+  error instanceof TypeError && /Cannot read propert(y|ies)[^]*\bmap\b/.test(error.message);
+
 const fetchList = async (collection, category, num, country) => {
     // The library defaults to 50 and rejects anything above 200, so always pass
     // an explicit, validated count. Anything missing or invalid asks for the
@@ -47,6 +52,9 @@ const fetchList = async (collection, category, num, country) => {
   
       return toplist;
     } catch (error) {
+      if (isEmptyFeedError(error)) {
+        return [];
+      }
       console.error("Error scraping top list.", error);
       throw new Error("An error occurred while scraping for top list.");
     }
