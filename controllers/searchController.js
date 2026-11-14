@@ -58,6 +58,11 @@ const searchController = async (req, res) => {
       // from an App Store URL, anything else is tried as a bundle id
       const lookup = /^\d+$/.test(query) ? { id: query } : { appId: query };
       const fetched_appID = await app({ ...lookup, country: country });
+      // A developer ID can resolve to their first app, which is not the requested app.
+      // Treat that mismatch as a failed lookup so the keyword search can run.
+      if (lookup.id && String(fetched_appID.id) !== query) {
+        throw new Error("Numeric lookup returned a different app ID");
+      }
       console.log("App ID passed\n");
       mainResults.splice(0, mainResults.length, fetched_appID);
     } catch (error) {

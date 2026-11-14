@@ -5,9 +5,11 @@
 const store = require('app-store-scraper');
 
 const INSTAGRAM = { id: 389801252, appId: 'com.burbn.instagram', title: 'Instagram', developer: 'Instagram, Inc.' };
+const FACEBOOK = { id: 284882215, appId: 'com.facebook.Facebook', title: 'Facebook', developer: 'Meta Platforms, Inc.' };
 const UNRELATED = { id: 1000000001, appId: 'com.example.unrelated', title: 'Unrelated Keyword Hit', developer: 'Example' };
 const NO_DETAILS = { id: 1000000002, appId: 'com.example.nodetails', title: 'No Details', developer: 'Example' };
-const KNOWN = [INSTAGRAM, UNRELATED];
+const KNOWN = [INSTAGRAM, FACEBOOK, UNRELATED];
+const META_DEVELOPER_ID = '284882218';
 
 const handlers = {
   // Search terms drive the scenarios: 'zzznomatch' has no hits, 'detailsfail'
@@ -18,6 +20,8 @@ const handlers = {
     return [{ ...UNRELATED }];
   },
   app: ({ id, appId }) => {
+    // Apple answers a developer id with that developer's first app.
+    if (String(id) === META_DEVELOPER_ID) return { ...FACEBOOK };
     const found = KNOWN.find((a) => (id ? String(a.id) === String(id) : a.appId === appId));
     if (!found) throw new Error('App not found (404)');
     return { ...found };

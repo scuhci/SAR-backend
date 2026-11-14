@@ -32,6 +32,24 @@ test('a numeric App Store id resolves to that app instead of a keyword search', 
   assert.equal(body.results[0].source, 'primary search');
 });
 
+test('a numeric developer id falls back to a keyword search', async () => {
+  const res = await fetch(`${server.base}/search?query=284882218&countryCode=us`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.totalCount, 1);
+  assert.equal(body.results[0].appId, 'com.example.unrelated');
+  assert.equal(body.results[0].source, 'primary search');
+});
+
+test('an all-digit query that is not an App Store id falls back to a keyword search', async () => {
+  const res = await fetch(`${server.base}/search?query=2048&countryCode=us`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.totalCount, 1);
+  assert.equal(body.results[0].appId, 'com.example.unrelated');
+  assert.equal(body.results[0].source, 'primary search');
+});
+
 test('a bundle id still resolves to that app', async () => {
   const res = await fetch(`${server.base}/search?query=com.burbn.instagram&countryCode=us`);
   assert.equal(res.status, 200);
