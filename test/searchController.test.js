@@ -73,7 +73,7 @@ require.cache[storePath] = { id: storePath, filename: storePath, loaded: true, e
 // routes/searchRoutes and controllers/searchController require each other;
 // load the router first, the same order index.js uses.
 require(path.join(__dirname, "..", "routes", "searchRoutes"));
-const { search, lookupThrottle } = require(path.join(__dirname, "..", "controllers", "searchController"));
+const { search, downloadRelog, lookupThrottle } = require(path.join(__dirname, "..", "controllers", "searchController"));
 // Short spacing keeps the suite fast; the limits themselves are covered with
 // mock timers in test/throttle.test.js.
 const DEFAULT_LIMITS = { ...lookupThrottle };
@@ -197,4 +197,52 @@ test("related apps are fetched from the storefront the user selected", async () 
   const related = res.body.results.filter((r) => r.source === "related app");
   assert.strictEqual(related.length, 6);
   assert.ok(related.every((r) => r.country === "gb"));
+});
+
+// downloadRelog runs inside cors(), which needs a request method and headers.
+function makeRelogRes() {
+  const res = { statusCode: 200, headers: {}, body: undefined };
+  res.setHeader = (name, value) => {
+    res.headers[name.toLowerCase()] = value;
+  };
+  res.getHeader = (name) => res.headers[name.toLowerCase()];
+  res.status = (code) => {
+    res.statusCode = code;
+    return res;
+  };
+  res.send = (payload) => {
+    res.body = payload;
+    return res;
+  };
+  res.end = () => res;
+  return res;
+}
+
+function relogFor(query) {
+  const res = makeRelogRes();
+  downloadRelog(
+    { method: "GET", headers: {}, query: { query, countryCode: "us", store: "apple", totalCount: "8" } },
+    res
+  );
+  return res.body;
+}
+
+test("relog names the primary apps whose related lists could not be fetched", async () => {
+  failingSimilar = new Set(["com.example.two"]);
+  await search(makeReq(), makeRes());
+
+  const log = relogFor("keyword");
+  assert.match(
+    log,
+    /incomplete_results: Related apps could not be fetched for 1 primary result\(s\): com\.example\.two/
+  );
+});
+
+test("relog has no incomplete line after a complete search, even one that was partial before", async () => {
+  failingSimilar = new Set(["com.example.two"]);
+  await search(makeReq(), makeRes());
+  failingSimilar = new Set();
+  await search(makeReq(), makeRes());
+
+  assert.doesNotMatch(relogFor("keyword"), /incomplete_results/);
 });

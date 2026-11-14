@@ -13,8 +13,11 @@ const router = require("../routes/searchRoutes");
 const { createThrottle } = require("../utilities/throttle");
 
 // Sweep expired result sets and cap how many are kept; see utilities/resultCache.js
-const { limitCache } = require("../utilities/resultCache");
+const { limitCache, createResultCache } = require("../utilities/resultCache");
 limitCache(node_ttl);
+// Primary apps whose related list could not be fetched, per stored search, so
+// the reproducibility log can say the results were incomplete.
+const relatedFailures = createResultCache();
 
 let csvData;
 let globalQuery;
@@ -190,6 +193,11 @@ const searchController = async (req, res) => {
     const pushQuery = "c:" + country + "_t:" + query; // new relog key since results are based on country + search query now
     // we want users to get the CSV results corresponding to their entire search, so an update was necessary
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
+    if (relatedFailedFor.length > 0) {
+      relatedFailures.push(pushQuery, relatedFailedFor, null, 604800);
+    } else {
+      relatedFailures.del(pushQuery);
+    }
     console.log("CSV stored on backend");
     return res.json({
       totalCount: uniqueResults.length,
@@ -207,6 +215,21 @@ const searchController = async (req, res) => {
   }
 };
 
+// Relog line for a search whose related-app lists were not all fetched
+const relatedFailureNote = (country, query) => {
+  const failedFor = relatedFailures.get("c:" + country + "_t:" + query);
+  if (!failedFor || failedFor.length === 0) {
+    return {};
+  }
+  return {
+    incomplete_results:
+      "Related apps could not be fetched for " +
+      failedFor.length +
+      " primary result(s): " +
+      failedFor.join(", "),
+  };
+};
+
 const downloadRelog = (req, res) => {
   // creating a log file
   // SMAR Version Number, Time/Date, Search Term, # Apps Scraped, Options Selected,
@@ -220,6 +243,7 @@ const downloadRelog = (req, res) => {
         country: req.query.countryCode,
         search_query: req.query.query,
         num_results: req.query.totalCount,
+        ...relatedFailureNote(req.query.countryCode, req.query.query),
         info: "This search was performed using the SMAR tool: www.smar-tool.org. This reproducibility log can be used in the supplemental materials of a publication to allow other researchers to reproduce the searches made to gather these results.",
       };
       // Implement store and country when applicable
