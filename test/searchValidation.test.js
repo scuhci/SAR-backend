@@ -9,7 +9,6 @@ const gplay = require("google-play-scraper");
 const calls = { search: [], app: [] };
 let searchResults = [];
 let probeError = null; // what app() throws for a query that is not a com.* app ID
-let failDetails = false; // every detail fetch fails (simulated store throttling)
 
 const notFound = () => Object.assign(new Error("App not found (404)"), { status: 404 });
 
@@ -22,7 +21,6 @@ gplay.search = async (opts) => {
 gplay.app = async (opts) => {
     calls.app.push(opts);
     if (!opts.appId.startsWith("com.")) throw probeError || notFound();
-    if (failDetails) throw Object.assign(new Error("Response code 429"), { status: 429 });
     return { appId: opts.appId, title: "Details " + opts.appId, summary: "s", genre: "Tools" };
 };
 
@@ -53,7 +51,6 @@ test.beforeEach(() => {
     calls.app.length = 0;
     searchResults = [{ appId: "com.example.one", title: "Example One" }];
     probeError = null;
-    failDetails = false;
 });
 
 test("download-csv for a search that is not cached is a 404 even after another search ran", async () => {
@@ -95,6 +92,18 @@ test("a throttled app-ID probe fails the request instead of starting the keyword
     assert.strictEqual(related.length, 0, "no related-app searches after a 429");
 });
 
+test("a 503 app-ID probe fails the request instead of starting the keyword fan-out", async () => {
+    probeError = Object.assign(new Error("Response code 503"), { status: 503 });
+    searchResults = [
+        { appId: "com.example.one", title: "Example One" },
+        { appId: "com.example.two", title: "Example Two" },
+    ];
+    const res = await fetch(`${base}/search?query=fitness&countryCode=US`);
+    assert.strictEqual(res.status, 500);
+    const related = calls.search.filter((c) => c.term.startsWith("related to "));
+    assert.strictEqual(related.length, 0, "no related-app searches after a 503");
+});
+
 test("a keyword (probe 404) still runs the related-app searches", async () => {
     const res = await fetch(`${base}/search?query=fitness&countryCode=US`);
     assert.strictEqual(res.status, 200);
@@ -106,5 +115,7 @@ test("a search the store has no apps for is 200 with zero results, not a 500", a
     searchResults = [];
     const res = await fetch(`${base}/search?query=zzzz-no-such-app&countryCode=US`);
     assert.strictEqual(res.status, 200);
-    assert.deepStrictEqual(await res.json(), { totalCount: 0, results: [] });
+    const body = await res.json();
+    assert.strictEqual(body.totalCount, 0);
+    assert.deepStrictEqual(body.results, []);
 });

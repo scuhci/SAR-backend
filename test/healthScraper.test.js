@@ -13,7 +13,7 @@ for (const name of ["search", "app", "reviews", "list", "permissions"]) {
 }
 
 const app = require("../index");
-const { isFlaggedStatus } = require("../utilities/healthCheck");
+const { getHealthStatus, isFlaggedStatus } = require("../utilities/healthCheck");
 let server;
 let base;
 
@@ -39,4 +39,18 @@ test("polling /health/scraper runs no store checks and cannot trip the alert fla
     }
     assert.strictEqual(scraperCalls, 0);
     assert.deepStrictEqual(isFlaggedStatus(), { flagged: false, consecutiveFailures: 0, flaggedAt: null });
+});
+
+test("/health/scraper returns 503 for an unhealthy cached status without store checks", async () => {
+    const status = getHealthStatus();
+    const previousOverall = status.overall;
+    try {
+        status.overall = "unhealthy";
+        const res = await fetch(`${base}/health/scraper`);
+        assert.strictEqual(res.status, 503);
+        assert.strictEqual((await res.json()).overall, "unhealthy");
+        assert.strictEqual(scraperCalls, 0);
+    } finally {
+        status.overall = previousOverall;
+    }
 });
