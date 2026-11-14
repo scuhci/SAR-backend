@@ -1,10 +1,10 @@
 const gplay = require("google-play-scraper");
-require("../utilities/gplayCategoryGuard");
 const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
 const { createResultCache } = require("../utilities/resultCache");
+require("../utilities/gplayCategoryGuard");
 var node_ttl = createResultCache();
 
 const cors = require("cors");
@@ -234,7 +234,7 @@ const downloadTopChartsCSV = (req, res) => {
             const csvInfo = node_ttl.get(cacheKey(query, num, permissions));
             if (!csvInfo) {
                 return res.status(404).json({
-                    error: "CSV data not available. Scrape this chart again with the same options, then download.",
+                    error: "Results for this search were not found or have expired. Please search again.",
                 });
             }
             const csv = jsonToCsv(csvInfo, "app", standardPermissionsList, permissions);

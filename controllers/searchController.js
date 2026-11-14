@@ -6,6 +6,7 @@ const { cleanText, jsonToCsv } = require("../utilities/jsonToCsv");
 const permissionsController = require("./permissionsController");
 const standardPermissionsList = require("./permissionsConfig");
 const json_raw = require("../package.json");
+const nodeTTL = require("node-ttl");
 const { createResultCache } = require("../utilities/resultCache");
 const nodemailer = require("nodemailer");
 var node_ttl = createResultCache();

@@ -94,7 +94,7 @@ test("the top charts cache sweeps in the background and is capped", async () => 
         const base = `http://127.0.0.1:${server.address().port}`;
         const queries = DEFAULT_MAX_ENTRIES + 20;
         for (let i = 0; i < queries; i++) {
-            const res = await fetch(`${base}/toplists?collection=TOP_FREE&category=GAME&num=1&country=c${i}`);
+            const res = await fetch(`${base}/toplists?collection=TOP_FREE&category=GAME&num=${i + 1}&country=us`);
             assert.equal(res.status, 200);
         }
         assert.equal(instances.size, 1);
