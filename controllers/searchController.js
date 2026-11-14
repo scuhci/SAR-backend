@@ -388,6 +388,8 @@ const searchController = async (req, res) => {
       })();
     }
 
+    // Preserve the scrape time with the cached CSV result.
+    csvData.scrapedAt = new Date();
     node_ttl.push(pushQuery, csvData, null, 604800); // 1 week
     console.log("CSV stored on backend");
     return res.json({

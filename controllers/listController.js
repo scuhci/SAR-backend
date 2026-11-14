@@ -114,6 +114,8 @@ const scrapeList = async (req, res) => {
             resultsToSend = cleanedTopListResults;
             csvData = toplist;
         }
+        // Preserve the scrape time with the cached CSV result.
+        csvData.scrapedAt = new Date();
 
         node_ttl.push(query, csvData, null, 604800);
         console.log(query);

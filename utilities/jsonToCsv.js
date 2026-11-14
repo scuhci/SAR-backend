@@ -151,7 +151,8 @@ function orderColumns(columns, source)
 
 function jsonToCsv(jsonData, source, standardPermissionsList, includePermissions = false) {
   const csvRows = [];
-  const currentTime = new Date();
+  // Cached result sets carry the time they were scraped; CSVs built during the scrape fall back to now.
+  const currentTime = jsonData.scrapedAt || new Date();
 
   // console.log(jsonData);
 
