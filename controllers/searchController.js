@@ -117,6 +117,11 @@ const searchController = async (req, res) => {
         })),
       ),
     ];
+    // The store has no apps for this query: an empty result, not an error.
+    if (allResults.length === 0) {
+      console.log("[%s] Search for '%s' returned no apps\n", file_name, query);
+      return res.json({ totalCount: 0, results: [] });
+    }
 
     console.log(
       "[%s] [%d] allResults:\n-------------------------\n",
@@ -128,11 +133,6 @@ const searchController = async (req, res) => {
     }
     console.log("All results fetched\n");
 
-    // The store has no apps for this query: an empty result, not an error.
-    if (allResults.length === 0) {
-      console.log("[%s] Search for '%s' returned no apps\n", file_name, query);
-      return res.json({ totalCount: 0, results: [] });
-    }
     // Fetch additional details (including genre) for each result
     const detailedResults = await Promise.all(
       allResults.map(async (appInfo) => {
