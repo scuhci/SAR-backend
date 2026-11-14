@@ -14,6 +14,9 @@ function toCellText(value) {
   if (value === null || value === undefined) {
     return '';
   }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
   if (Array.isArray(value)) {
     return value.map(item => toCellText(item)).join(', ');
   }

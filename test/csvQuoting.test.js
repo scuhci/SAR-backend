@@ -89,3 +89,10 @@ test('a column missing from a later row is still a quoted empty cell', () => {
   assert.strictEqual(cells.length, cols.length);
   assert.strictEqual(cells[cols.indexOf('reviewTitle')], '');
 });
+
+test('Date values are written as ISO timestamps without extra quotes', () => {
+  const csv = jsonToCsv([{ id: 1, released: new Date(0) }], 'reviews');
+  const [header, row] = csv.split('\n');
+  const cells = parseRow(row);
+  assert.strictEqual(cells[parseRow(header).indexOf('released')], '1970-01-01T00:00:00.000Z');
+});

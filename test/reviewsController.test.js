@@ -109,7 +109,7 @@ test("sortBy=Recency uses the most-recent feed and the relog says so", async () 
   assert.match(relog(), /^sort: mostRecent$/m);
 });
 
-test("the frontend's RECENT/HELPFUL constants are accepted too", async () => {
+test("the RECENT/HELPFUL sort names are accepted too", async () => {
   await scrape("HELPFUL");
   assert.deepEqual(sortsUsed(), ["mostHelpful"]);
   await scrape("RECENT");

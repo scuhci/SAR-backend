@@ -74,7 +74,7 @@ test("reviews relog is named after the app id", () => {
     sorting: "RECENT",
   });
   assert.strictEqual(statusCode, 200);
-  assert.strictEqual(filenameOf(headers), "Reproducibility_Log_284882215.txt");
+  assert.strictEqual(filenameOf(headers), "Reproducibility_Log_284882215_reviews.txt");
   assert.match(body, /^appId: 284882215$/m);
 });
 

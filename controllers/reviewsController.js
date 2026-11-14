@@ -26,7 +26,7 @@ const scrapeKey = (countryCode, appId, sortName) =>
 
 const resolveSort = (sortBy) => {
   const value = String(sortBy || "").trim().toUpperCase();
-  if (value === "HELPFUL" || value === "HELPFULNESS" || value === "MOSTHELPFUL") {
+  if (value === "HELPFUL" || value === "HELPFULNESS") {
     return "HELPFUL";
   }
   return DEFAULT_SORT;
@@ -59,8 +59,11 @@ const downloadReviewsRelog = (req, res) => {
       }
       const fileText = logInfo_arr.join("\n");
       console.log(fileText);
+      // "_reviews" keeps it apart from a search relog for the same term
       const filename =
-        "Reproducibility_Log_" + encodeURI(logInfo.appId) + ".txt";
+        "Reproducibility_Log_" +
+        encodeURIComponent(logInfo.appId) +
+        "_reviews.txt";
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${filename}"`
@@ -77,7 +80,7 @@ const downloadReviewsRelog = (req, res) => {
 const fetchReviews = async (appId, countryCode, sortName) => {
   const options = {
     appId: appId,
-    sort: SORT_OPTIONS[sortName] || SORT_OPTIONS[DEFAULT_SORT],
+    sort: SORT_OPTIONS[sortName],
     page: 1,
     country: countryCode,
   };
