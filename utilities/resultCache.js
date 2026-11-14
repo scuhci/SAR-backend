@@ -6,13 +6,15 @@ const nodeTTL = require("node-ttl");
 // week so the CSV can be downloaded later, and a key that is never downloaded is
 // never read, so without the sweep it stays in memory until the process restarts.
 // This builds the cache with a sweep and caps the number of entries, dropping the
-// oldest ones first, so memory stays bounded however many distinct queries come in.
+// least recently used ones first (stored or read), so memory stays bounded however
+// many distinct queries come in and a result that is being downloaded is not the
+// first to go.
 const DEFAULT_CHECK_PERIOD_MS = 60 * 1000;
 const DEFAULT_MAX_ENTRIES = 100;
 
 const createResultCache = ({ checkPeriode = DEFAULT_CHECK_PERIOD_MS, maxEntries = DEFAULT_MAX_ENTRIES } = {}) => {
     const cache = new nodeTTL({ checkPeriode });
-    const keysByAge = []; // oldest first
+    const keysByAge = []; // least recently used first
 
     const forget = (key) => {
         const index = keysByAge.indexOf(key);
@@ -35,7 +37,15 @@ const createResultCache = ({ checkPeriode = DEFAULT_CHECK_PERIOD_MS, maxEntries 
             }
             return true;
         },
-        get: (keys, callback) => cache.get(keys, callback),
+        get: (keys, callback) => {
+            const value = cache.get(keys, callback);
+            if (typeof keys === "string" && value != null) {
+                // A read counts as use for the cap; it does not extend the TTL.
+                forget(keys);
+                keysByAge.push(keys);
+            }
+            return value;
+        },
         del: (keys) => cache.del(keys),
         size: () => cache.size(),
         getOptions: () => cache.getOptions(),

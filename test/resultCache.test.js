@@ -41,6 +41,34 @@ test("the number of entries is capped and the oldest go first", () => {
     assert.deepEqual(cache.get("third"), [3]);
 });
 
+test("reading an entry moves it to the newest eviction position", () => {
+    const cache = createResultCache({ maxEntries: 3 });
+    cache.push("a", [1], null, 604800);
+    cache.push("b", [2], null, 604800);
+    cache.push("c", [3], null, 604800);
+
+    assert.deepEqual(cache.get("a"), [1]);
+    cache.push("d", [4], null, 604800);
+
+    assert.deepEqual(cache.get("a"), [1]);
+    assert.equal(cache.get("b"), null);
+    assert.equal(cache.size(), 3);
+});
+
+test("reading a missing entry does not add a slot", () => {
+    const cache = createResultCache({ maxEntries: 3 });
+    cache.push("a", [1], null, 604800);
+    cache.push("b", [2], null, 604800);
+
+    assert.equal(cache.get("missing"), null);
+    cache.push("c", [3], null, 604800);
+
+    assert.equal(cache.size(), 3);
+    assert.deepEqual(cache.get("a"), [1]);
+    assert.deepEqual(cache.get("b"), [2]);
+    assert.deepEqual(cache.get("c"), [3]);
+});
+
 test("re-pushing an existing key refreshes it instead of counting twice", () => {
     const cache = createResultCache({ maxEntries: 2 });
     cache.push("first", [1], null, 604800);
@@ -110,5 +138,92 @@ test("the top charts cache sweeps in the background and is capped", async () => 
         gplay.app = origApp;
         nodeTTL.prototype.push = origPush;
         await new Promise((resolve) => server.close(resolve));
+    }
+});
+
+test("a top-chart result set evicted by the cap downloads as 404", async () => {
+    const origList = gplay.list;
+    const origApp = gplay.app;
+    const origLog = console.log;
+    const chartApp = { title: "App", appId: "com.example.app", summary: "s", score: 4, developer: "d", url: "u" };
+    gplay.list = async () => [chartApp];
+    gplay.app = async () => ({ ...chartApp });
+    console.log = () => {};
+
+    const { scrapeList, downloadTopChartsCSV } = require("../controllers/listController");
+    const makeRes = () => ({
+        headers: {},
+        statusCode: 200,
+        setHeader(k, v) {
+            this.headers[k] = v;
+        },
+        getHeader(k) {
+            return this.headers[k];
+        },
+        status(code) {
+            this.statusCode = code;
+            return this;
+        },
+        json(body) {
+            this.body = body;
+        },
+        send(body) {
+            this.body = body;
+        },
+        end() {},
+    });
+    const scrape = async (query) => {
+        const res = makeRes();
+        await scrapeList({ query }, res);
+        return res;
+    };
+    const download = async (query) => {
+        const res = makeRes();
+        await new Promise((resolve) => {
+            const origSend = res.send;
+            res.send = function (body) {
+                origSend.call(this, body);
+                resolve();
+            };
+            res.json = function (body) {
+                this.body = body;
+                resolve();
+            };
+            downloadTopChartsCSV({ query, headers: {}, method: "GET" }, res);
+        });
+        return res;
+    };
+
+    try {
+        const victim = {
+            collection: "TOP_FREE",
+            category: "GAME_ARCADE",
+            country: "us",
+            num: "1",
+            includePermissions: "false",
+        };
+        const victimScrape = await scrape(victim);
+        assert.equal(victimScrape.statusCode, 200);
+
+        for (let i = 1; i <= DEFAULT_MAX_ENTRIES; i++) {
+            const res = await scrape({
+                ...victim,
+                category: "GAME_BOARD",
+                num: String(i),
+            });
+            assert.equal(res.statusCode, 200);
+        }
+
+        const dl = await download({
+            query: "TOP_FREEGAME_ARCADEus",
+            num: "1",
+            includePermissions: "false",
+        });
+        assert.equal(dl.statusCode, 404);
+        assert.match(dl.body.error, /search again/i);
+    } finally {
+        console.log = origLog;
+        gplay.list = origList;
+        gplay.app = origApp;
     }
 });
