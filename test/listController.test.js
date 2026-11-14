@@ -5,6 +5,8 @@ const assert = require("node:assert");
 const path = require("path");
 
 const MAX_APPS_COUNT = 200;
+// Apple's RSS feed returns about 100 entries however large the limit is.
+const APPLE_FEED_CAP = 100;
 
 // Replace the real scraper module before the controller requires it.
 const listCalls = [];
@@ -15,7 +17,7 @@ let listImpl = async (opts) => {
     // array) at limit=1 and app-store-scraper then fails on apps.map.
     throw new TypeError("apps.map is not a function");
   }
-  return Array.from({ length: opts.num }, (_, i) => ({
+  return Array.from({ length: Math.min(opts.num, APPLE_FEED_CAP) }, (_, i) => ({
     id: String(1000 + i),
     title: `App ${i + 1}`,
   }));
@@ -88,13 +90,22 @@ test("num=1 asks the scraper for 2 and returns exactly 1 app", async () => {
   assert.strictEqual(res.body.results[0].title, "App 1");
 });
 
-test("requests the maximum when num is omitted", async () => {
+test("asks for the largest limit when num is omitted and returns what the feed has", async () => {
   const res = makeRes();
   await scrapeList(makeReq(), res);
 
   assert.strictEqual(res.statusCode, 200);
   assert.strictEqual(listCalls[0].num, MAX_APPS_COUNT);
-  assert.strictEqual(res.body.totalCount, MAX_APPS_COUNT);
+  assert.strictEqual(res.body.totalCount, APPLE_FEED_CAP);
+});
+
+test("a num above what the feed holds returns the whole chart, not an error", async () => {
+  const res = makeRes();
+  await scrapeList(makeReq({ num: "150" }), res);
+
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(listCalls[0].num, 150);
+  assert.strictEqual(res.body.totalCount, APPLE_FEED_CAP);
 });
 
 test("clamps num above the maximum", async () => {
@@ -106,7 +117,7 @@ test("clamps num above the maximum", async () => {
 });
 
 test("falls back to the maximum when num is not a positive integer", async () => {
-  for (const bad of ["abc", "0", "-5"]) {
+  for (const bad of ["abc", "0", "-5", "12abc", "3.9"]) {
     listCalls.length = 0;
     const res = makeRes();
     await scrapeList(makeReq({ num: bad }), res);

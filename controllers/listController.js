@@ -9,6 +9,8 @@ const path = require("path");
 const file_name = path.basename(__filename);
 
 
+// Largest limit app-store-scraper accepts. Apple's RSS feed itself stops at
+// about 100 entries whatever limit is sent, so a full chart is about 100 apps.
 const MAX_APPS_COUNT = 200;
 // Apple's RSS feed returns feed.entry as a single object (not an array) when
 // limit=1, which makes app-store-scraper's list() throw "apps.map is not a
@@ -17,7 +19,8 @@ const MIN_LIST_REQUEST = 2;
 
 const fetchList = async (collection, category, num, country) => {
     // The library defaults to 50 and rejects anything above 200, so always pass
-    // an explicit, validated count. Anything missing or invalid means "as many as possible".
+    // an explicit, validated count. Anything missing or invalid asks for the
+    // largest limit, which Apple answers with the whole chart (about 100 apps).
     const numAppsToFetch =
       Number.isInteger(num) && num > 0 && num < MAX_APPS_COUNT ? num : MAX_APPS_COUNT;
     const options = {
@@ -53,7 +56,8 @@ const fetchList = async (collection, category, num, country) => {
     const category = Number(req.query.category);
     const categoryName = req.query.categoryName;
     const country = req.query.country;
-    const num = req.query.num ? parseInt(req.query.num, 10) : MAX_APPS_COUNT;
+    // Number(), not parseInt(): "12abc" or "3.9" must count as invalid, not as 12 or 3
+    const num = req.query.num ? Number(req.query.num) : MAX_APPS_COUNT;
     const permissions = false;
     const query = collection.concat(categoryName, country);
   
