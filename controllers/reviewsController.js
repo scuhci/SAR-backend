@@ -7,9 +7,11 @@ var node_ttl = new nodeTTL();
 
 const MAX_REVIEWS_COUNT = 10000; //Fixed value for now, can be updated for future development
 
-// Play returns only the reviews written in the requested language (hl), so asking
-// for "en" everywhere returned only English reviews in every market. Use the main
-// language of each store country the frontend offers; every other country uses "en".
+// Play selects reviews by the requested language (hl) only: the country does not
+// filter them, so asking for "en" everywhere returned the same English-language
+// set for every market. Request the main language of each store country the
+// frontend offers; every other country uses "en". Countries that share a language
+// therefore get the same reviews (MX, ES and AR all get the "es" set).
 const LANG_COUNTRIES = {
     ar: "AE BH DZ EG EH IQ JO KW LB LY MA OM PS QA SA SD TN YE",
     es: "AR BO CL CO CR CU DO EC ES GQ GT HN MX NI PA PE PR PY SV UY VE",
@@ -50,6 +52,7 @@ const downloadReviewsRelog = (req, res) => {
                 store: req.query.store,
                 country: req.query.countryCode,
                 lang: counts.lang,
+                note: "Google Play selects reviews by language only; the country does not filter them",
                 num_reviews: counts.scraped,
                 store_reported_reviews: counts.reported,
                 appId: req.query.appId,

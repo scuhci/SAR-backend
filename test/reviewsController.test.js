@@ -187,7 +187,10 @@ test("GSR-07: reviews are requested in the store country's language", async (t) 
 test("GSR-07: the relog records the language the reviews were fetched in", async (t) => {
     stubStore(t, { reported: 2, pages: [page(0, 2, null)] });
     await scrape({ appId: "com.example.jp", countryCode: "JP" });
-    assert.equal(relog({ appId: "com.example.jp", countryCode: "JP" }).lang, "ja");
+    const log = relog({ appId: "com.example.jp", countryCode: "JP" });
+    assert.equal(log.lang, "ja");
+    // Play ignores the country for reviews; the log has to say so next to the language
+    assert.match(log.note, /by language only/);
 });
 
 test("N-GPLAY-01: reviewer names and avatars are in neither the CSV nor the server log", async (t) => {
