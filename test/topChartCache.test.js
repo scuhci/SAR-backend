@@ -137,3 +137,27 @@ test("scrape without num and download without num use the same key (how the fron
     assert.strictEqual(dl.statusCode, 200);
     assert.strictEqual(csvRows(dl).length - 1, res.body.totalCount);
 });
+
+test("scraped with permissions, downloaded with the box unticked", async () => {
+    const permissionsCombo = { collection: "TOP_FREE", category: "GAME_WORD", country: "us" };
+    const res = await scrape({ ...permissionsCombo, includePermissions: "true" });
+    assert.strictEqual(res.statusCode, 200);
+
+    const query = permissionsCombo.collection + permissionsCombo.category + permissionsCombo.country;
+    const dl = await download({ query, includePermissions: "false" });
+    assert.strictEqual(dl.statusCode, 200);
+    const rows = csvRows(dl);
+    assert.strictEqual(rows.length - 1, res.body.totalCount);
+    assert.ok(!rows[0].includes("take pictures and videos"));
+    assert.ok(!rows[0].includes("permissions"));
+});
+
+test("scraped without permissions, downloaded with the box ticked stays a 404", async () => {
+    const permissionsCombo = { collection: "TOP_FREE", category: "GAME_TRIVIA", country: "us" };
+    await scrape({ ...permissionsCombo, includePermissions: "false" });
+
+    const query = permissionsCombo.collection + permissionsCombo.category + permissionsCombo.country;
+    const dl = await download({ query, includePermissions: "true" });
+    assert.strictEqual(dl.statusCode, 404);
+    assert.match(dl.body.error, /search again/i);
+});

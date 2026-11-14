@@ -231,7 +231,13 @@ const downloadTopChartsCSV = (req, res) => {
             const num = req.query.num ? req.query.num : MAX_APPS_COUNT;
             const permissions = req.query.includePermissions === "true";
             console.log("Query used for CSV: %s\n", cacheKey(query, num, permissions));
-            const csvInfo = node_ttl.get(cacheKey(query, num, permissions));
+            let csvInfo = node_ttl.get(cacheKey(query, num, permissions));
+            if (!csvInfo && !permissions) {
+                // The frontend sends the checkbox's current state, which may have been unticked
+                // since the scrape. Rows scraped with permissions hold everything a CSV without
+                // them needs. The other direction cannot be served: those rows have no permissions.
+                csvInfo = node_ttl.get(cacheKey(query, num, true));
+            }
             if (!csvInfo) {
                 return res.status(404).json({
                     error: "Results for this search were not found or have expired. Please search again.",
