@@ -66,7 +66,7 @@ const downloadReviewsRelog = (req, res) => {
   });
 };
 
-const fetchReviews = async (appId, reviewsCount, countryCode, sortName) => {
+const fetchReviews = async (appId, countryCode, sortName) => {
   const options = {
     appId: appId,
     sort: SORT_OPTIONS[sortName] || SORT_OPTIONS[DEFAULT_SORT],
@@ -76,15 +76,12 @@ const fetchReviews = async (appId, reviewsCount, countryCode, sortName) => {
 
   try {
     let reviews = [];
+    const seenIds = new Set();
     let totalFetched = 0;
     let emptyInARow = 0;
-    let numReviews =
-      reviewsCount && reviewsCount < MAX_REVIEWS_COUNT
-        ? reviewsCount
-        : MAX_REVIEWS_COUNT;
-    console.log(`Fetching ${numReviews} Reviews for AppId: ${appId}`);
+    console.log(`Fetching up to ${MAX_REVIEWS_COUNT} Reviews for AppId: ${appId}`);
 
-    while (totalFetched < numReviews && options.page < 11) {
+    while (totalFetched < MAX_REVIEWS_COUNT && options.page < 11) {
       console.log(`Fetching page ${options.page} of reviews\n`);
       const result = await iosStore.reviews(options);
       if (!result || result.length === 0) {
@@ -98,14 +95,20 @@ const fetchReviews = async (appId, reviewsCount, countryCode, sortName) => {
         continue;
       }
       emptyInARow = 0;
-      reviews = reviews.concat(result);
+      for (const review of result) {
+        if (review.id !== undefined && review.id !== null) {
+          if (seenIds.has(review.id)) continue;
+          seenIds.add(review.id);
+        }
+        reviews.push(review);
+      }
       totalFetched = reviews.length;
       console.log(`Total reviews fetched so far: ${totalFetched}`);
       options.page = options.page + 1; // We can only scrape up to page 10, so we stop incrementing before we reach that point
     }
 
-    if (reviews.length > numReviews) {
-      reviews = reviews.slice(0, numReviews);
+    if (reviews.length > MAX_REVIEWS_COUNT) {
+      reviews = reviews.slice(0, MAX_REVIEWS_COUNT);
     }
 
     return reviews;
@@ -134,13 +137,8 @@ const scrapeReviews = async (req, res) => {
 
     console.log(`App ${appId} contains ${reviewsCount} reviews`);
 
-    // Fetch reviews based on the count or the maximum limit
-    const reviews = await fetchReviews(
-      appId,
-      reviewsCount,
-      countryCode,
-      sortName
-    );
+    // Fetch reviews up to the maximum limit, independent of Apple's rating count
+    const reviews = await fetchReviews(appId, countryCode, sortName);
     console.log(
       `Received ${reviews.length} reviews for app: ${appId} (sort: ${sortName})`
     );
