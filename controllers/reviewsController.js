@@ -77,6 +77,7 @@ const fetchReviews = async (appId, reviewsCount, countryCode, sortName) => {
   try {
     let reviews = [];
     let totalFetched = 0;
+    let emptyInARow = 0;
     let numReviews =
       reviewsCount && reviewsCount < MAX_REVIEWS_COUNT
         ? reviewsCount
@@ -87,9 +88,16 @@ const fetchReviews = async (appId, reviewsCount, countryCode, sortName) => {
       console.log(`Fetching page ${options.page} of reviews\n`);
       const result = await iosStore.reviews(options);
       if (!result || result.length === 0) {
-        console.log(`Page ${options.page} returned no reviews, stopping`);
-        break; // The store has no more reviews; later pages would be empty too
+        emptyInARow++;
+        console.log(`Page ${options.page} returned no reviews (${emptyInARow} empty page(s) in a row)`);
+        if (emptyInARow >= 2) {
+          break; // Two empty pages in a row: the feed has ended
+        }
+        // Apple sometimes serves one empty page in the middle of the feed, so skip it
+        options.page = options.page + 1;
+        continue;
       }
+      emptyInARow = 0;
       reviews = reviews.concat(result);
       totalFetched = reviews.length;
       console.log(`Total reviews fetched so far: ${totalFetched}`);
