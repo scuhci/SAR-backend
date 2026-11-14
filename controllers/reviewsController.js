@@ -100,13 +100,11 @@ const fetchReviews = async (appId, countryCode, lang) => {
     try {
         let reviews = [];
         const seenIds = new Set();
-        let totalFetched = 0;
         // The app page's review count is not what the store will page out (it can be
         // far lower or higher), so page until the store runs out, up to the cap.
-        const numReviews = MAX_REVIEWS_COUNT;
-        console.log(`Fetching up to ${numReviews} Reviews for AppId: ${appId} (lang: ${lang})`);
+        console.log(`Fetching up to ${MAX_REVIEWS_COUNT} Reviews for AppId: ${appId} (lang: ${lang})`);
 
-        while (totalFetched < numReviews) {
+        while (reviews.length < MAX_REVIEWS_COUNT) {
             const result = await gplay.reviews(options);
             // Drop reviews already collected so a repeated page never adds duplicate rows
             const newData = (result.data || []).filter((review) => {
@@ -129,8 +127,7 @@ const fetchReviews = async (appId, countryCode, lang) => {
             });
 
             reviews = reviews.concat(processedReviews);
-            totalFetched += newData.length;
-            console.log(`Total reviews fetched so far: ${totalFetched}`);
+            console.log(`Total reviews fetched so far: ${reviews.length}`);
 
             // The store has no more pages when it returns nothing new, no token,
             // or the token just used. Otherwise this loop re-sends a request forever.
@@ -141,8 +138,8 @@ const fetchReviews = async (appId, countryCode, lang) => {
             options.nextPaginationToken = nextToken;
         }
 
-        if (reviews.length > numReviews) {
-            reviews = reviews.slice(0, numReviews);
+        if (reviews.length > MAX_REVIEWS_COUNT) {
+            reviews = reviews.slice(0, MAX_REVIEWS_COUNT);
         }
 
         return reviews;
