@@ -10,6 +10,9 @@ const { startPeriodicHealthCheck, getHealthStatus } = require("./utilities/healt
 const searchController = require("./controllers/searchController");
 const app = express();
 const port = 5001;
+// nginx on this host is the only client (smar.nginx.conf proxies to 127.0.0.1:5001), so
+// listen on loopback only. Set LISTEN_HOST=0.0.0.0 to reach a dev server from another device.
+const host = process.env.LISTEN_HOST || "127.0.0.1";
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -77,14 +80,21 @@ process.on("unhandledRejection", (reason) => {
     console.error("Unhandled promise rejection:", reason);
 });
 
-// Listen only when started directly (node index.js / pm2 start index.js); tests require the app.
-if (require.main === module) {
-    app.listen(port, () => {
-        console.log(`Server is running on http://localhost:${port}`);
+function start(listenPort = port) {
+    const server = app.listen(listenPort, host, () => {
+        const actualPort = server.address().port;
+        console.log(`Server is running on http://${host}:${actualPort}`);
 
         // Start periodic health check for scraper services
         startPeriodicHealthCheck();
     });
+    return server;
+}
+
+// Listen only when started directly (node index.js / pm2 start index.js); tests require the app.
+if (require.main === module) {
+    start();
 }
 
 module.exports = app;
+module.exports.start = start;
